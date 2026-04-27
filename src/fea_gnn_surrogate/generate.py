@@ -2,10 +2,10 @@ import os
 import numpy as np
 import networkx as nx
 
-from structural_analysis.config import load_config
-from structural_analysis.fea.environment import StructEnvironment
-from structural_analysis.fea import nodal_reactions as nr
-from structural_analysis.graph.graph_utils import GraphHandler
+from fea_gnn_surrogate.config import load_config
+from fea_gnn_surrogate.fea.environment import StructEnvironment
+from fea_gnn_surrogate.fea import nodal_reactions as nr
+from fea_gnn_surrogate.graph.graph_utils import GraphHandler
 
 
 def generate_samples(config_path, mode="train", num_episodes=1000,

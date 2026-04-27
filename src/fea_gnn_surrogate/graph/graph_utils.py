@@ -600,7 +600,7 @@ class GraphHandler:
 
     @staticmethod
     def draw_graph(Gs, path):
-        from structural_analysis.visualization import plot_deflection
+        from fea_gnn_surrogate.visualization import plot_deflection
 
         (
             node_positions,

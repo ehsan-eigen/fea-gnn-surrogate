@@ -2,8 +2,8 @@
 import argparse
 import os
 
-from structural_analysis.generate import generate_samples
-from structural_analysis.graph.graph_utils import GraphHandler
+from fea_gnn_surrogate.generate import generate_samples
+from fea_gnn_surrogate.graph.graph_utils import GraphHandler
 
 
 def main():

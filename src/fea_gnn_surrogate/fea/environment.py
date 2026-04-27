@@ -1,8 +1,8 @@
 import numpy as np
 
-from structural_analysis.fea import stiffness as st
-from structural_analysis.fea import member_reactions as mr
-from structural_analysis.fea import nodal_reactions as nr
+from fea_gnn_surrogate.fea import stiffness as st
+from fea_gnn_surrogate.fea import member_reactions as mr
+from fea_gnn_surrogate.fea import nodal_reactions as nr
 
 
 class StructEnvironment:

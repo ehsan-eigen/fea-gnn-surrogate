@@ -49,11 +49,11 @@ The pipeline has three stages:
 ## Project structure
 
 ```
-structural_analysis/
+fea-gnn-surrogate/
 ├── pyproject.toml                        # pip package definition
 ├── config.json                           # geometry configs for train + test sets
 │
-├── src/structural_analysis/              # main package
+├── src/fea_gnn_surrogate/               # main package
 │   ├── config.py                         # load_config(): parse config.json
 │   ├── generate.py                       # generate_samples(): full generation pipeline
 │   ├── visualization.py                  # plot_structure(), plot_deflection()
@@ -281,10 +281,10 @@ python scripts/run_inference.py \
 ## Programmatic API
 
 ```python
-from structural_analysis.generate import generate_samples
-from structural_analysis.graph.graph_utils import GraphHandler
-from structural_analysis.surrogate.inference import load_model, predict, rank_structures
-from structural_analysis.surrogate.dataset import normalize_data
+from fea_gnn_surrogate.generate import generate_samples
+from fea_gnn_surrogate.graph.graph_utils import GraphHandler
+from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_structures
+from fea_gnn_surrogate.surrogate.dataset import normalize_data
 import pickle
 
 # Generate 100 training samples

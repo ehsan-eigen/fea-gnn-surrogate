@@ -3,8 +3,8 @@ import numpy as np
 import pandas as pd
 import pickle
 
-from structural_analysis.surrogate.model import SharedMPNN
-from structural_analysis.surrogate.dataset import normalize_data
+from fea_gnn_surrogate.surrogate.model import SharedMPNN
+from fea_gnn_surrogate.surrogate.dataset import normalize_data
 
 
 def load_model(model_path, num_features, hidden_dim=18, output_dim=1, num_mp_steps=3):

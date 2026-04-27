@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import os
 
-from structural_analysis.fea import member_reactions as mr
+from fea_gnn_surrogate.fea import member_reactions as mr
 
 
 def plot_structure(members, nodes, dir, name):

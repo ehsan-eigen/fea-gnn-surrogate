@@ -3,11 +3,11 @@ import argparse
 import os
 import pickle
 
-from structural_analysis.config import load_config
-from structural_analysis.fea.environment import StructEnvironment
-from structural_analysis.graph.graph_utils import GraphHandler
-from structural_analysis.surrogate.inference import load_model, predict, rank_structures
-from structural_analysis.surrogate.dataset import normalize_data
+from fea_gnn_surrogate.config import load_config
+from fea_gnn_surrogate.fea.environment import StructEnvironment
+from fea_gnn_surrogate.graph.graph_utils import GraphHandler
+from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_structures
+from fea_gnn_surrogate.surrogate.dataset import normalize_data
 
 
 def main():

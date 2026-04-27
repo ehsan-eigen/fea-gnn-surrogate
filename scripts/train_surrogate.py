@@ -2,15 +2,15 @@
 import argparse
 import torch
 
-from structural_analysis.surrogate.model import SharedMPNN
-from structural_analysis.surrogate.dataset import (
+from fea_gnn_surrogate.surrogate.model import SharedMPNN
+from fea_gnn_surrogate.surrogate.dataset import (
     load_dataset,
     create_dataloaders,
     compute_class_weight,
     compute_normalization_stats,
     normalize_data,
 )
-from structural_analysis.surrogate.train import train
+from fea_gnn_surrogate.surrogate.train import train
 
 
 def main():
