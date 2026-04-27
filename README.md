@@ -1,4 +1,4 @@
-# Structural Analysis — 2D Frame GNN Surrogate
+# 2D Frame GNN Surrogate
 
 ![Cover](cover_photo.png)
 
