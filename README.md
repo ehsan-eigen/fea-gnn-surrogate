@@ -22,7 +22,8 @@ Assume we want to assess the stability of a frame structure under the following 
 - Vertical Load: SDL, uniform (300 KN/m)
 
 In the above image, beams and columns that do not meet the stability criteria are colored red (invalid elements). The blue elements are considered valid. A structure is valid if and only if all its elements are valid (i.e., the deflection of beams and drift of columns are within the specified thresholds).
-Key aspects of this problem:
+
+# Key aspects of this problem:
 
 1. **Validation Threshold:** Instead of estimating the deformation itself, we assess whether the deformation satisfies a valid threshold (maximum normal deflection for beams and maximum drift for columns). Structural engineers generally do not focus on the exact deformation as long as it is within the standard range specified in civil codes.
 
