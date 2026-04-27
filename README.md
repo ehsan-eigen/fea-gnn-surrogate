@@ -23,15 +23,13 @@ Assume we want to assess the stability of a frame structure under the following 
 
 In the above image, beams and columns that do not meet the stability criteria are colored red (invalid elements). The blue elements are considered valid. A structure is valid if and only if all its elements are valid (i.e., the deflection of beams and drift of columns are within the specified thresholds).
 
-# Key aspects of this problem:
+## Key aspects of this problem:
 
-1. **Validation Threshold:** Instead of estimating the deformation itself, we assess whether the deformation satisfies a valid threshold (maximum normal deflection for beams and maximum drift for columns). Structural engineers generally do not focus on the exact deformation as long as it is within the standard range specified in civil codes.
+1. **Validation Threshold:** We predict whether deformation stays within code-specified limits (not the exact value), since structural engineers care about pass/fail, not precise magnitudes.
 
-2. **Multiple Loads:** The structure is subjected to multiple vertical and lateral load forces.
+2. **Multiple Loads:** The structure is subjected to both vertical (SDL) and lateral (wind) loads simultaneously.
 
-3. **Generalized Function:** Our objective is to create a function that can estimate the deflection for any frame structure with arbitrary geometry (arbitrary stiffness matrix) and under arbitrary load vectors. However, the diversity of possible structures that can be modeled with frame elements is vast, and the relationship between design variables and deformation can be highly complex in the general case. Capturing this diversity and designing a surrogate model that accurately approximates the deflection of any structure would require generating billions of samples for various frame designs and loads to extract meaningful patterns. This task is beyond the scope of this project.
-
-    Therefore, we focus on a family of frame structures with specific constraints on their geometrical designs and force loads. Our goal is to analyze the stability of grid layout frame structures where the first two levels have the same slab plan and column layout, which differs from the slab plan of the upper levels. In other words, the grid layout is consistent within the two lower levels and within all the upper levels, but not necessarily between them. These designs resemble a simplified version of a concrete frame building with two basement levels (for parking) and an arbitrary number of above-ground residential levels. Therefore, the first-floor beams are typically transfer beams. We have limited our samples to a maximum of 11 above-ground levels. The pattern of lateral and vertical loads is depicted in the image above: the lateral load increases with height and is only applied to the above-ground levels, while the vertical load is uniformly distributed (300 KN/m) on each level.
+3. **Scoped Generalization:** A fully general surrogate for arbitrary frame geometries is intractable — it would require billions of samples. Instead, we focus on a specific family: grid-layout RC frames with two basement levels and up to 11 above-ground residential levels, where the basement column layout may differ from the upper levels (requiring transfer beams at the first floor).
 
 ---
 
