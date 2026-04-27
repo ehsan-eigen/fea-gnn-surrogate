@@ -1,0 +1,15 @@
+*.pyc
+.vscode/
+__pycache__/
+*.egg-info/
+top_structs/
+images/
+*.mp4
+.venv
+venv
+*.png
+*.csv
+data/
+logs/
+!cover_photo.png
+!sample_raw_graph.png

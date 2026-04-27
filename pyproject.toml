@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "structural-analysis"
+version = "0.1.0"
+description = "2D multi-story frame structural analysis with GNN surrogate model"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+    "networkx",
+    "torch",
+    "torch_geometric",
+    "pandas",
+    "scikit-learn",
+    "tensorboard",
+]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
