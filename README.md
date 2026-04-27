@@ -33,7 +33,41 @@ In the above image, beams and columns that do not meet the stability criteria ar
 
     Therefore, we focus on a family of frame structures with specific constraints on their geometrical designs and force loads. Our goal is to analyze the stability of grid layout frame structures where the first two levels have the same slab plan and column layout, which differs from the slab plan of the upper levels. In other words, the grid layout is consistent within the two lower levels and within all the upper levels, but not necessarily between them. These designs resemble a simplified version of a concrete frame building with two basement levels (for parking) and an arbitrary number of above-ground residential levels. Therefore, the first-floor beams are typically transfer beams. We have limited our samples to a maximum of 11 above-ground levels. The pattern of lateral and vertical loads is depicted in the image above: the lateral load increases with height and is only applied to the above-ground levels, while the vertical load is uniformly distributed (300 KN/m) on each level.
 
-For a deeper discussion of the GNN model architecture, message passing, feature engineering, and ideas for improvement, see [GNN Model Intuitions](GNN_model_intuitions.md).
+---
+
+## GNN Architecture — The Core Innovation
+
+> **The GNN model and its graph data representation are the central contribution of this project.**
+
+Predicting structural validity is not a standard supervised learning problem. Because frame structures are connected systems, the deflection of any element depends on the stiffness and loading of the *entire* structure — not just its own cross-section. This rules out per-element classifiers. Three key design decisions make the surrogate tractable:
+
+### 1. Line Graph Transformation
+
+Frame structures are naturally edge-centric: beams and columns are edges, joints are nodes. Edge-level GNN prediction is harder than node-level prediction, so each structure is converted to its **line graph** — original edges become nodes, and two line-graph nodes are connected if the corresponding elements share a joint. This turns element-validity prediction into standard node classification.
+
+Before the transformation, all joint information (support conditions, relative position) is embedded into adjacent edge features so no structural information is lost.
+
+### 2. Physically Motivated Feature Engineering
+
+Raw cross-section dimensions are replaced by features grounded in structural mechanics:
+
+| Feature | Physical meaning |
+|---|---|
+| **DW** | Proportional to cross-sectional area (axial stiffness) |
+| **D³W** | Proportional to second moment of area (bending stiffness) |
+| **Transfer beam flag** | Identifies elements carrying redistributed column loads |
+| **Cantilever flag** | Flags elements with a free end (high deflection risk) |
+| **Level & position ratios** | Encode location in the load path |
+
+### 3. Shared-Weight Message Passing (SharedMPNN)
+
+A single `GraphConv` layer is applied repeatedly for `mp_steps` iterations with **tied weights**. This forces the model to learn one general message-passing rule rather than separate per-layer transformations — a strong inductive bias that matches the structural regularity of frame buildings.
+
+---
+
+### Read more
+
+**[→ GNN Model Intuitions](GNN_model_intuitions.md)** — a detailed walkthrough of the data representation, line graph construction, feature derivations, message passing mechanics, and directions for improvement. This is the primary technical reference for the model.
 
 ---
 
@@ -240,6 +274,8 @@ tensorboard --logdir logs/
 3. **Linear readout** — maps `hidden_dim` to 1 logit per node (element)
 
 Training uses `BCEWithLogitsLoss` with a class-rebalancing `pos_weight` to handle the imbalance between valid (majority) and invalid elements.
+
+For the reasoning behind these architectural choices — including the line graph transformation, feature engineering, and message-passing design — see **[GNN Model Intuitions](GNN_model_intuitions.md)**.
 
 ---
 
