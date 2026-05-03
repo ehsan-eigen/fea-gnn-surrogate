@@ -13,3 +13,4 @@ data/
 logs/
 !cover_photo.png
 !sample_raw_graph.png
+*.pth

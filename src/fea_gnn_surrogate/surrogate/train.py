@@ -13,8 +13,9 @@ def train_one_epoch(model, dataloader, optimizer, criterion):
 
     for batch_data in dataloader:
         optimizer.zero_grad()
-        pred = model(batch_data).view(-1)
-        labels = batch_data.y.to(torch.float64)
+        mask = batch_data.x[:, 4] == 1  # exclude virtual node (real=0)
+        pred = model(batch_data).view(-1)[mask]
+        labels = batch_data.y.to(torch.float64)[mask]
         loss = criterion(pred.to(torch.float64), labels)
         preds = torch.sigmoid(pred)
 
@@ -38,8 +39,9 @@ def validate(model, dataloader, criterion):
 
     with torch.no_grad():
         for batch_data in dataloader:
-            pred = model(batch_data).view(-1)
-            labels = batch_data.y.to(torch.float64)
+            mask = batch_data.x[:, 4] == 1  # exclude virtual node (real=0)
+            pred = model(batch_data).view(-1)[mask]
+            labels = batch_data.y.to(torch.float64)[mask]
             loss = criterion(pred.to(torch.float64), labels)
             preds = torch.sigmoid(pred)
             predictions_list.extend(preds.detach().numpy())
@@ -85,5 +87,6 @@ def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
             checkpoint["norm_stats"] = norm_stats
         torch.save(checkpoint, save_path)
         print(f"Best model saved to {save_path}")
+        print(f"Best validation loss: {best_val_loss:.4f}")
 
     return best_model_state_dict
