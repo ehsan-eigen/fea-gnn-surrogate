@@ -42,6 +42,9 @@ examples:
     parser.add_argument("--save_graphs", action="store_true",
                         help="Also save raw and simplified NetworkX graphs to disk. "
                              "Required if you want to visualize top structures during inference (Stage 3)")
+    parser.add_argument("--no_virtual_node", action="store_true",
+                        help="Disable the global shared virtual node in the line graph. "
+                             "Use this to assess the effect of the virtual node on model accuracy")
     args = parser.parse_args()
 
     line_graphs = generate_samples(
@@ -54,9 +57,12 @@ examples:
         output_dir=args.output_dir,
     )
 
-    save_dir = os.path.join(args.output_dir, args.mode, "dataset")
+    vn_subdir = "with_vn" if not args.no_virtual_node else "no_vn"
+    save_dir = os.path.join(args.output_dir, args.mode, vn_subdir, "dataset")
     has_label = not args.skip_fea
-    GraphHandler.save_pyg_line_graphs(line_graphs, save_dir, args.output_name, has_label=has_label)
+    use_virtual_node = not args.no_virtual_node
+    GraphHandler.save_pyg_line_graphs(line_graphs, save_dir, args.output_name,
+                                      has_label=has_label, use_virtual_node=use_virtual_node)
 
     print(f"Saved {len(line_graphs)} graphs to {os.path.join(save_dir, args.output_name)}")
 
