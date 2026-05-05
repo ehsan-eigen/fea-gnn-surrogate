@@ -44,9 +44,12 @@ class GraphHandler:
         self.set_step_size(G)
         return G
 
-    def simplify_graph(self, G):
+    def simplify_graph(self, G, use_hop_edges=False):
         Gs = self.unify_edges(G.copy())
-        self.set_real_flag(Gs)
+        if use_hop_edges:
+            self.add_hop_edges(Gs)
+        else:
+            self.set_real_flag(Gs)
         self.set_rotation(Gs)
         self.set_column_flag(Gs)
         self.set_distance(Gs)
