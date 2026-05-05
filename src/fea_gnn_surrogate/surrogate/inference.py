@@ -33,6 +33,8 @@ def predict(model, data_list, threshold=0.5):
         for data in data_list:
             logits = model(data).view(-1)
             probs = torch.sigmoid(logits)
+            mask = data.x[:, 4] == 1  # exclude virtual node (real=0)
+            probs = probs[mask]
             preds = (probs >= threshold).int()
             results.append({
                 "probs": probs.numpy(),

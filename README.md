@@ -107,6 +107,7 @@ fea-gnn-surrogate/
 ├── scripts/
 │   ├── generate_dataset.py               # CLI: generate samples + save PyG graphs
 │   ├── train_surrogate.py                # CLI: train the GNN
+│   ├── evaluate_model.py                 # CLI: report test set metrics for a trained model
 │   └── run_inference.py                  # CLI: rank test structures by GNN predictions
 │
 └── tests/
@@ -164,16 +165,23 @@ Each section has these fields:
 Below is the complete sequence of commands to go from raw data to ranked structures. Each stage is explained in detail in the sections that follow.
 
 ```bash
-# Stage 1a — Generate 1000 labelled training structures (--save_graphs needed for the tutorial notebook)
+# Stage 1a — Generate 1000 labelled training structures
 python scripts/generate_dataset.py --mode train --num_samples 1000 --save_graphs
 
 # Stage 1b — Generate 500 test structures (with --save_graphs for visualization in Stage 3)
 python scripts/generate_dataset.py --mode test_1 --num_samples 500 --save_graphs
 
-# Stage 2 — Train the GNN surrogate on the training data
+# Stage 2 — Train the GNN surrogate
 python scripts/train_surrogate.py \
-    --dataset_path data/train/dataset/pyg_line_graphs.pkl \
+    --dataset_path data/train/with_vn/dataset/pyg_line_graphs.pkl \
     --epochs 100
+
+# Stage 2b — Report generalisation metrics on test sets
+python scripts/evaluate_model.py \
+    --model_path best_model.pth \
+    --test_dataset_paths \
+        data/test_1/with_vn/dataset/pyg_line_graphs.pkl \
+        data/test_2/with_vn/dataset/pyg_line_graphs.pkl
 
 # Stage 3 — Run inference on the test data: rank structures and produce deflection plots
 python scripts/run_inference.py --test_name test_1
@@ -236,7 +244,7 @@ Train the model on the dataset generated in Stage 1a:
 
 ```bash
 python scripts/train_surrogate.py \
-    --dataset_path data/train/dataset/pyg_line_graphs.pkl \
+    --dataset_path data/train/with_vn/dataset/pyg_line_graphs.pkl \
     --epochs 100 \
     --save_path best_model.pth
 ```
@@ -256,6 +264,40 @@ The checkpoint contains both the model weights and the normalisation statistics 
 | `--test_size` | `0.3` | Fraction of data held out for validation |
 | `--save_path` | `best_model.pth` | Where to save the best model checkpoint |
 | `--log_dir` | `./logs/` | TensorBoard log directory |
+
+---
+
+## Stage 2b — Evaluate generalisation on test sets
+
+The validation split during training is drawn from the same plan as the training data and is used only for model selection (checkpoint saving). To measure how well the model generalises to different building plans, run the dedicated evaluation script on the test datasets:
+
+```bash
+python scripts/evaluate_model.py \
+    --model_path best_model.pth \
+    --test_dataset_paths \
+        data/test_1/with_vn/dataset/pyg_line_graphs.pkl \
+        data/test_2/with_vn/dataset/pyg_line_graphs.pkl
+```
+
+Output:
+
+```
+Model:  best_model.pth
+Dataset                                             Loss       AUC
+----------------------------------------------------------------------
+  test_1                                          0.0312    0.9621
+  test_2                                          0.0489    0.9184
+```
+
+### All arguments
+
+| Argument | Default | Description |
+|---|---|---|
+| `--model_path` | (required) | Path to trained model checkpoint (`.pth`) |
+| `--test_dataset_paths` | (required) | One or more paths to test `.pkl` datasets |
+| `--hidden_dim` | `18` | Must match the value used during training |
+| `--mp_steps` | `3` | Must match the value used during training |
+| `--batch_size` | `32` | Batch size for evaluation |
 
 Monitor training:
 

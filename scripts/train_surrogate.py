@@ -1,6 +1,7 @@
 """Train the GNN surrogate model."""
 import argparse
 import torch
+from torch_geometric.loader import DataLoader
 
 from fea_gnn_surrogate.surrogate.model import SharedMPNN
 from fea_gnn_surrogate.surrogate.dataset import (
@@ -38,7 +39,6 @@ def main():
     normalize_data(val_data, norm_stats)
 
     # Recreate loaders after normalization
-    from torch_geometric.loader import DataLoader
     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
     val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
 

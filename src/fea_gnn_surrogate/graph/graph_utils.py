@@ -44,9 +44,12 @@ class GraphHandler:
         self.set_step_size(G)
         return G
 
-    def simplify_graph(self, G):
+    def simplify_graph(self, G, use_hop_edges=False):
         Gs = self.unify_edges(G.copy())
-        self.add_hop_edges(Gs)
+        if use_hop_edges:
+            self.add_hop_edges(Gs)
+        else:
+            self.set_real_flag(Gs)
         self.set_rotation(Gs)
         self.set_column_flag(Gs)
         self.set_distance(Gs)
@@ -161,6 +164,10 @@ class GraphHandler:
             dy = pos_v[1] - pos_u[1]
             rotation_angle = math.atan2(dy, dx)
             G[u][v]["rotation"] = rotation_angle
+
+    def set_real_flag(self, G):
+        for edge in G.edges():
+            G[edge[0]][edge[1]]["real"] = True
 
     def add_hop_edges(self, G):
         for edge in G.edges():
@@ -520,7 +527,7 @@ class GraphHandler:
             pickle.dump(G, file)
 
     @staticmethod
-    def save_pyg_line_graphs(nx_graphs, dir, name, has_label=True):
+    def save_pyg_line_graphs(nx_graphs, dir, name, has_label=True, use_virtual_node=True):
         if not os.path.exists(dir):
             os.makedirs(dir)
         path = os.path.join(dir, name)
@@ -539,7 +546,7 @@ class GraphHandler:
                         node["cant"],
                         node["foundation"],
                         node["transfer"],
-                        node["real"],
+                        node.get("real", 1),
                         node["level_ratio"],
                         node["col_l2r_ratio"] * np.sin(node["rotation"]),
                         node["level"],
@@ -553,11 +560,28 @@ class GraphHandler:
                 ],
                 dtype=torch.float,
             )
-            weight = sum([node["D"] * node["W"] * node["dist"] * int(node["real"]) for node in nodes])
+            weight = sum([node["D"] * node["W"] * node["dist"] * int(node.get("real", 1)) for node in nodes])
+
+            if use_virtual_node:
+                # Add virtual node (all-zero features; real=0 at index 4 marks it as non-physical)
+                num_real_nodes = x.shape[0]
+                vn_feat = torch.zeros(1, x.shape[1])
+                x = torch.cat([x, vn_feat], dim=0)
+                vn_idx = num_real_nodes
+                real_indices = torch.arange(num_real_nodes, dtype=torch.long)
+                vn_to_all = torch.stack([torch.full((num_real_nodes,), vn_idx, dtype=torch.long), real_indices])
+                all_to_vn = torch.stack([real_indices, torch.full((num_real_nodes,), vn_idx, dtype=torch.long)])
+                edge_index = torch.cat([edge_index, vn_to_all, all_to_vn], dim=1)
+
             if has_label:
                 y = torch.tensor([node["valid"] for node in nodes])
                 drift = torch.tensor([node["drift"] for node in nodes])
                 normal_def = torch.tensor([node["normal_deflection"] for node in nodes])
+                if use_virtual_node:
+                    # Append dummy label for virtual node (masked out during training)
+                    y = torch.cat([y, torch.zeros(1, dtype=y.dtype)])
+                    drift = torch.cat([drift, torch.zeros(1, dtype=drift.dtype)])
+                    normal_def = torch.cat([normal_def, torch.zeros(1, dtype=normal_def.dtype)])
                 data = Data(
                     x=x,
                     edge_index=edge_index,
