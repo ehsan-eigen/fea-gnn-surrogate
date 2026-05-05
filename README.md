@@ -166,19 +166,21 @@ Below is the complete sequence of commands to go from raw data to ranked structu
 
 ```bash
 # Stage 1a — Generate 1000 labelled training structures
+#            (saves hop_edges, with_vn, and no_vn variants automatically)
 python scripts/generate_dataset.py --mode train --num_samples 1000 --save_graphs
 
-# Stage 1b — Generate 500 test structures (with --save_graphs for visualization in Stage 3)
+# Stage 1b — Generate 500 test structures
 python scripts/generate_dataset.py --mode test_1 --num_samples 500 --save_graphs
 
-# Stage 2 — Train the GNN surrogate
+# Stage 2 — Train the GNN surrogate (example: virtual-node variant)
 python scripts/train_surrogate.py \
     --dataset_path data/train/with_vn/dataset/pyg_line_graphs.pkl \
+    --save_path best_model_vn.pth \
     --epochs 100
 
 # Stage 2b — Report generalisation metrics on test sets
 python scripts/evaluate_model.py \
-    --model_path best_model.pth \
+    --model_path best_model_vn.pth \
     --test_dataset_paths \
         data/test_1/with_vn/dataset/pyg_line_graphs.pkl \
         data/test_2/with_vn/dataset/pyg_line_graphs.pkl
@@ -193,17 +195,23 @@ python scripts/run_inference.py --test_name test_1
 
 You need to generate **two** datasets: one for training and one for testing. Both run FEA to label every beam and column as valid or invalid.
 
+A single generation run produces **three edge-strategy variants** from the same structures simultaneously — see [Edge Strategy Comparison](#edge-strategy-comparison) for details.
+
 ### 1a. Generate training data
 
 ```bash
 python scripts/generate_dataset.py --mode train --num_samples 1000 --save_graphs
 ```
 
-This generates 1000 random frame structures using the `train` section of `config.json`, runs FEA on each, labels every element, and saves the result as a PyG dataset to:
+This generates 1000 random frame structures using the `train` section of `config.json`, runs FEA on each, labels every element, and saves three PyG datasets:
 
 ```
-data/train/dataset/pyg_line_graphs.pkl
+data/train/hop_edges/dataset/pyg_line_graphs.pkl   # domain-knowledge hop edges
+data/train/with_vn/dataset/pyg_line_graphs.pkl     # global shared virtual node
+data/train/no_vn/dataset/pyg_line_graphs.pkl       # no artificial edges (baseline)
 ```
+
+All three files represent the **same 1000 structures** — only the graph topology differs.
 
 ### 1b. Generate test data
 
@@ -211,12 +219,14 @@ data/train/dataset/pyg_line_graphs.pkl
 python scripts/generate_dataset.py --mode test_1 --num_samples 500 --save_graphs
 ```
 
-This does the same using the `test_1` geometry. The `--save_graphs` flag saves the raw and simplified NetworkX graphs alongside the PyG dataset:
+This does the same using the `test_1` geometry. The `--save_graphs` flag saves the raw and simplified NetworkX graphs alongside the PyG datasets:
 
 ```
-data/test_1/dataset/pyg_line_graphs.pkl      # PyG dataset (used by Stage 2 and 3)
-data/test_1/raw/graphs/0.pkl, 1.pkl, ...     # raw NetworkX graphs
-data/test_1/simplified/graphs/0.pkl, ...     # simplified NetworkX graphs
+data/test_1/hop_edges/dataset/pyg_line_graphs.pkl
+data/test_1/with_vn/dataset/pyg_line_graphs.pkl
+data/test_1/no_vn/dataset/pyg_line_graphs.pkl
+data/test_1/raw/graphs/0.pkl, 1.pkl, ...           # raw NetworkX graphs
+data/test_1/simplified/graphs/0.pkl, ...           # simplified NetworkX graphs
 ```
 
 The raw and simplified graphs are needed in Stage 3 to re-run FEA on the top-ranked structures and produce deflection plots.
@@ -240,13 +250,26 @@ You can generate data for any test section (`test_2`, `test_3`, etc.) by changin
 
 ## Stage 2 — Train the GNN surrogate
 
-Train the model on the dataset generated in Stage 1a:
+Train the model on one of the datasets generated in Stage 1a. Pick the variant you want to evaluate (see [Edge Strategy Comparison](#edge-strategy-comparison)):
 
 ```bash
+# Virtual-node variant
 python scripts/train_surrogate.py \
     --dataset_path data/train/with_vn/dataset/pyg_line_graphs.pkl \
-    --epochs 100 \
-    --save_path best_model.pth
+    --save_path best_model_vn.pth \
+    --epochs 100
+
+# Domain-knowledge hop-edges variant
+python scripts/train_surrogate.py \
+    --dataset_path data/train/hop_edges/dataset/pyg_line_graphs.pkl \
+    --save_path best_model_hop.pth \
+    --epochs 100
+
+# Baseline (no artificial edges)
+python scripts/train_surrogate.py \
+    --dataset_path data/train/no_vn/dataset/pyg_line_graphs.pkl \
+    --save_path best_model_novn.pth \
+    --epochs 100
 ```
 
 The checkpoint contains both the model weights and the normalisation statistics from the training split, so inference does not need a separate stats file.
@@ -273,7 +296,7 @@ The validation split during training is drawn from the same plan as the training
 
 ```bash
 python scripts/evaluate_model.py \
-    --model_path best_model.pth \
+    --model_path best_model_vn.pth \
     --test_dataset_paths \
         data/test_1/with_vn/dataset/pyg_line_graphs.pkl \
         data/test_2/with_vn/dataset/pyg_line_graphs.pkl
@@ -282,11 +305,11 @@ python scripts/evaluate_model.py \
 Output:
 
 ```
-Model:  best_model.pth
+Model:  best_model_vn.pth
 Dataset                                             Loss       AUC
 ----------------------------------------------------------------------
-  test_1                                          0.0312    0.9621
-  test_2                                          0.0489    0.9184
+  with_vn                                         0.2265    0.9724
+  with_vn                                         0.0717    0.9939
 ```
 
 ### All arguments
@@ -364,19 +387,30 @@ from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_stru
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
 import pickle
 
-# Generate 100 training samples
-line_graphs = generate_samples(config_path="config.json", mode="train", num_episodes=100)
+# Generate 100 training samples — returns (no-hop line graphs, hop-edge line graphs)
+line_graphs, line_graphs_hop = generate_samples(
+    config_path="config.json", mode="train", num_episodes=100
+)
 
-# Save as PyG dataset
+# Save all three variants from the same structures
 GraphHandler.save_pyg_line_graphs(
-    line_graphs, "data/train/dataset", "pyg_line_graphs.pkl"
+    line_graphs_hop, "data/train/hop_edges/dataset", "pyg_line_graphs.pkl",
+    use_virtual_node=False,
+)
+GraphHandler.save_pyg_line_graphs(
+    line_graphs, "data/train/with_vn/dataset", "pyg_line_graphs.pkl",
+    use_virtual_node=True,
+)
+GraphHandler.save_pyg_line_graphs(
+    line_graphs, "data/train/no_vn/dataset", "pyg_line_graphs.pkl",
+    use_virtual_node=False,
 )
 
 # Load a test dataset and run inference
-with open("data/test_1/dataset/pyg_line_graphs.pkl", "rb") as f:
+with open("data/test_1/with_vn/dataset/pyg_line_graphs.pkl", "rb") as f:
     test_data = pickle.load(f)
 
-model, norm_stats = load_model("best_model.pth", num_features=13)
+model, norm_stats = load_model("best_model_vn.pth", num_features=13)
 if norm_stats:
     normalize_data(test_data, norm_stats)
 
@@ -398,9 +432,41 @@ A structure is considered valid only if **all** of its elements are valid.
 
 ---
 
-## Pre-trained model
+---
 
-A pre-trained checkpoint `best_model.pth` is included in the repository, trained on 1000 samples.
+## Edge Strategy Comparison
+
+Each generation run produces three graph representations of the **same** structures. This allows a controlled comparison of how the graph connectivity affects GNN accuracy:
+
+| Variant | Description | Subdirectory |
+|---|---|---|
+| **`hop_edges`** | Domain-knowledge artificial edges connecting transfer-row nodes to upper-floor column nodes (original approach) | `hop_edges/` |
+| **`with_vn`** | Global shared virtual node connected bidirectionally to all elements — every element is exactly 2 hops from every other | `with_vn/` |
+| **`no_vn`** | No artificial edges; pure local message passing along physical connections only (baseline) | `no_vn/` |
+
+The `hop_edges` and `with_vn` artificial nodes/edges have `real=False` (feature index 4) and are **masked out** of the training loss and inference outputs — they act purely as message-passing conduits.
+
+### Experimental results (500 train / 200 test per set)
+
+| Variant | Best Val Loss | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss |
+|---|---|---|---|---|---|
+| Hop edges (domain knowledge) | 0.0310 | 0.9690 | 0.3353 | 0.9954 | 0.0842 |
+| Virtual node | **0.0393** | **0.9724** | **0.2265** | 0.9939 | **0.0717** |
+| No edges (baseline) | 0.0350 | 0.9720 | 0.2830 | **0.9967** | 0.0777 |
+
+All three variants achieve similar AUC (~0.97 on test_1, ~0.99 on test_2). The virtual node matches or outperforms the hand-coded hop edges on test loss, without requiring any domain-specific graph engineering. The baseline performs surprisingly well, suggesting learned node features carry most of the predictive signal.
+
+---
+
+## Pre-trained models
+
+Three pre-trained checkpoints are included, each trained on 500 samples with the corresponding edge strategy:
+
+| File | Variant | Best Val Loss |
+|---|---|---|
+| `best_model_hop.pth` | Hop edges (domain knowledge) | 0.0310 |
+| `best_model_vn.pth` | Virtual node | 0.0393 |
+| `best_model_novn.pth` | No edges (baseline) | 0.0350 |
 
 ---
 
