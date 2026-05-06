@@ -10,18 +10,22 @@ from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_stru
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
 
 
+EDGE_STRATEGIES = ["with_vn", "hop_edges", "no_vn"]
+
+
 def main():
     parser = argparse.ArgumentParser(description="Run GNN surrogate inference on test structures")
     parser.add_argument("--test_name", type=str, required=True,
                         help="Config section for the test case (e.g. test_1, test_2, ...)")
-    parser.add_argument("--model_path", type=str, default="best_model.pth",
-                        help="Path to trained model checkpoint (default: best_model.pth)")
+    parser.add_argument("--edge_strategy", type=str, default="with_vn",
+                        choices=EDGE_STRATEGIES,
+                        help="Edge strategy variant (default: with_vn)")
+    parser.add_argument("--model_path", type=str, default=None,
+                        help="Path to trained model checkpoint (default: best_model_<edge_strategy>.pth)")
     parser.add_argument("--config", type=str, default="config.json",
                         help="Path to the configuration file (default: config.json)")
     parser.add_argument("--data_dir", type=str, default="data",
                         help="Root data directory, must match --output_dir used during generation (default: data)")
-    parser.add_argument("--dataset_path", type=str, default=None,
-                        help="Override the PyG dataset path (by default derived from --data_dir and --test_name)")
     parser.add_argument("--top_stability", type=int, default=15,
                         help="Keep top-K structures by predicted validity score (default: 15)")
     parser.add_argument("--top_weight", type=int, default=15,
@@ -34,10 +38,14 @@ def main():
                         help="Message passing steps, must match training (default: 3)")
     args = parser.parse_args()
 
-    if args.dataset_path is None:
-        args.dataset_path = os.path.join(args.data_dir, args.test_name, "dataset", "pyg_line_graphs.pkl")
+    if args.model_path is None:
+        args.model_path = f"best_model_{args.edge_strategy}.pth"
 
-    with open(args.dataset_path, "rb") as f:
+    dataset_path = os.path.join(
+        args.data_dir, args.test_name, args.edge_strategy, "dataset", "pyg_line_graphs.pkl"
+    )
+
+    with open(dataset_path, "rb") as f:
         val_data = pickle.load(f)
 
     num_features = val_data[0].x.shape[1]

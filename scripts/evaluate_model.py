@@ -9,23 +9,31 @@ from fea_gnn_surrogate.surrogate.dataset import load_dataset, normalize_data
 from fea_gnn_surrogate.surrogate.train import validate
 
 
+EDGE_STRATEGIES = ["with_vn", "hop_edges", "no_vn"]
+
+
+def _dataset_path(data_dir, test_set, edge_strategy):
+    return os.path.join(data_dir, test_set, edge_strategy, "dataset", "pyg_line_graphs.pkl")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate a trained GNN surrogate on one or more test datasets",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  python scripts/evaluate_model.py \\
-      --model_path best_model.pth \\
-      --test_dataset_paths \\
-          data/test_1/with_vn/dataset/pyg_line_graphs.pkl \\
-          data/test_2/with_vn/dataset/pyg_line_graphs.pkl
+  python scripts/evaluate_model.py --model_path best_model_vn.pth --test_sets test_1 test_2
 """,
     )
     parser.add_argument("--model_path", type=str, required=True,
                         help="Path to trained model checkpoint (.pth)")
-    parser.add_argument("--test_dataset_paths", type=str, nargs="+", required=True,
-                        help="One or more paths to test PyG datasets (.pkl)")
+    parser.add_argument("--test_sets", type=str, nargs="+", required=True,
+                        help="One or more test set names (e.g. test_1 test_2)")
+    parser.add_argument("--edge_strategy", type=str, default="with_vn",
+                        choices=EDGE_STRATEGIES,
+                        help="Edge strategy variant (default: with_vn)")
+    parser.add_argument("--data_dir", type=str, default="data",
+                        help="Root data directory (default: data)")
     parser.add_argument("--hidden_dim", type=int, default=18,
                         help="Hidden dimension, must match training (default: 18)")
     parser.add_argument("--mp_steps", type=int, default=3,
@@ -35,7 +43,8 @@ examples:
     args = parser.parse_args()
 
     # Load the first test set to infer num_features
-    first_data = load_dataset(args.test_dataset_paths[0])
+    first_path = _dataset_path(args.data_dir, args.test_sets[0], args.edge_strategy)
+    first_data = load_dataset(first_path)
     num_features = first_data[0].x.shape[1]
 
     model, norm_stats = load_model(
@@ -47,17 +56,17 @@ examples:
     criterion = torch.nn.BCEWithLogitsLoss()
 
     print(f"Model:  {args.model_path}")
-    print(f"{'Dataset':<50}  {'Loss':>8}  {'AUC':>8}")
-    print("-" * 70)
+    print(f"{'Test Set':<20}  {'Loss':>8}  {'AUC':>8}")
+    print("-" * 40)
 
-    for test_path in args.test_dataset_paths:
+    for test_set in args.test_sets:
+        test_path = _dataset_path(args.data_dir, test_set, args.edge_strategy)
         test_data = load_dataset(test_path)
         if norm_stats is not None:
             normalize_data(test_data, norm_stats)
         test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
         loss, auc, _, _, _ = validate(model, test_loader, criterion)
-        label = os.path.basename(os.path.dirname(os.path.dirname(test_path)))
-        print(f"  {label:<48}  {loss:>8.4f}  {auc:>8.4f}")
+        print(f"  {test_set:<18}  {loss:>8.4f}  {auc:>8.4f}")
 
 
 if __name__ == "__main__":
