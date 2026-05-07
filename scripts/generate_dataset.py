@@ -13,11 +13,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  # Generate 1000 training samples (saves hop_edges, with_vn, no_vn variants)
   python scripts/generate_dataset.py --mode train --num_samples 1000
-
-  # Generate 500 test samples, also saving raw graphs for later visualization
-  python scripts/generate_dataset.py --mode test_1 --num_samples 500 --save_graphs
+  python scripts/generate_dataset.py --mode test_1 --num_samples 500
 """,
     )
     parser.add_argument("--mode", type=str, default="train",
@@ -36,10 +33,12 @@ examples:
     parser.add_argument("--skip_fea", action="store_true",
                         help="Skip finite element analysis. Structures will have no validity labels, "
                              "so they cannot be used for training — only for unlabelled inference")
-    parser.add_argument("--save_graphs", action="store_true",
-                        help="Also save raw and simplified NetworkX graphs to disk. "
-                             "Required if you want to visualize top structures during inference (Stage 3)")
+    parser.add_argument("--no_save_graphs", action="store_true",
+                        help="Do not save raw and simplified NetworkX graphs to disk "
+                             "(they are saved by default for visualization in Stage 3)")
     args = parser.parse_args()
+
+    save_graphs = not args.no_save_graphs
 
     line_graphs, line_graphs_hop = generate_samples(
         config_path=args.config,
@@ -47,7 +46,7 @@ examples:
         num_episodes=args.num_samples,
         fea=not args.skip_fea,
         visualize=args.visualize,
-        save_graphs=args.save_graphs,
+        save_graphs=save_graphs,
         output_dir=args.output_dir,
     )
 

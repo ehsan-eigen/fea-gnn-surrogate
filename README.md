@@ -69,17 +69,179 @@ A single `GraphConv` layer is applied repeatedly for `mp_steps` iterations with 
 
 ---
 
-## Pipeline Overview
+## Installation
 
-The pipeline has three stages:
+Requires Python >= 3.9.
 
-1. **Generate** — randomly sample frame structures from a geometry config and run finite element analysis (FEA) to label each beam/column as valid or invalid based on vertical deflection and lateral drift
-2. **Train** — train a Graph Neural Network (GNN) on the labelled graphs to predict element validity without running FEA
-3. **Infer** — use the trained GNN to rank unseen structures by predicted stability and visualize the best candidates
+```bash
+python -m venv .venv
+source .venv/bin/activate
+
+pip install torch
+pip install torch_geometric
+pip install -e .
+```
 
 ---
 
-## Project structure
+## Quick Start
+
+### 1. Generate data
+
+```bash
+# Training data (1000 structures)
+python scripts/generate_dataset.py --mode train --num_samples 1000
+
+# Test data
+python scripts/generate_dataset.py --mode test_1 --num_samples 500
+python scripts/generate_dataset.py --mode test_2 --num_samples 500
+```
+
+Each run produces three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`) from the same structures, plus raw/simplified graphs for visualization.
+
+### 2. Train
+
+```bash
+python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100
+```
+
+This saves the model to `best_model_with_vn.pth` by default. To also report test metrics after training:
+
+```bash
+python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100 \
+    --test_sets test_1 test_2
+```
+
+### 3. Evaluate on test sets
+
+```bash
+python scripts/evaluate_model.py --model_path best_model_with_vn.pth \
+    --test_sets test_1 test_2
+```
+
+Output:
+
+```
+Model:  best_model_with_vn.pth
+Test Set              Loss       AUC
+----------------------------------------
+  test_1              0.2265    0.9724
+  test_2              0.0717    0.9939
+```
+
+### 4. Inference — rank structures
+
+```bash
+python scripts/run_inference.py --test_name test_1
+```
+
+This loads the model matching the edge strategy (default: `best_model_with_vn.pth`), ranks test structures by predicted validity, runs FEA on the top candidates, and saves deflection plots.
+
+---
+
+## Configuration
+
+`config.json` defines the building geometry for each dataset. It contains these sections:
+
+- `train` — the training layout (all column positions available, storey count randomised during generation)
+- `test_1` through `test_5` — five different test layouts with specific column positions
+
+Each section has these fields:
+
+| Field | Meaning |
+|---|---|
+| `num_cols` | Grid width (number of column positions) |
+| `num_rows` | Number of storeys (randomised +-3 during training) |
+| `transfer_row` | Storey index of the transfer slab |
+| `horizontal_scale` | Bay width in metres per grid unit |
+| `vertical_scale` | Storey height in metres |
+| `possible_columns_up` | Candidate column positions above the transfer slab |
+| `possible_columns_down` | Candidate column positions below the transfer slab |
+| `distance_lower_bound` | Minimum allowable column spacing (metres) |
+| `distance_upper_bound` | Maximum allowable span (metres) |
+
+---
+
+## CLI Reference
+
+### generate_dataset.py
+
+| Argument | Default | Description |
+|---|---|---|
+| `--mode` | `train` | Config section: `train`, `test_1`–`test_5` |
+| `--num_samples` | `1000` | Number of structures to generate |
+| `--config` | `config.json` | Path to the configuration file |
+| `--output_dir` | `data` | Root output directory |
+| `--visualize` | off | Save a deflection plot for each structure |
+| `--skip_fea` | off | Skip FEA (no labels — cannot train) |
+| `--no_save_graphs` | off | Skip saving raw/simplified NetworkX graphs |
+
+### train_surrogate.py
+
+| Argument | Default | Description |
+|---|---|---|
+| `--mode` | `train` | Config section for training data |
+| `--edge_strategy` | `with_vn` | `with_vn`, `hop_edges`, or `no_vn` |
+| `--test_sets` | none | Test sets to evaluate after training (e.g. `test_1 test_2`) |
+| `--data_dir` | `data` | Root data directory |
+| `--epochs` | `100` | Training epochs |
+| `--batch_size` | `32` | Mini-batch size |
+| `--hidden_dim` | `18` | Hidden dimension |
+| `--mp_steps` | `3` | Shared message-passing steps |
+| `--lr` | `0.01` | Learning rate |
+| `--test_size` | `0.3` | Validation split ratio |
+| `--save_path` | `best_model_<edge_strategy>.pth` | Model checkpoint path |
+| `--log_dir` | `./logs/` | TensorBoard log directory |
+
+### evaluate_model.py
+
+| Argument | Default | Description |
+|---|---|---|
+| `--model_path` | (required) | Path to trained model checkpoint |
+| `--test_sets` | (required) | Test set names (e.g. `test_1 test_2`) |
+| `--edge_strategy` | `with_vn` | Edge strategy variant |
+| `--data_dir` | `data` | Root data directory |
+| `--hidden_dim` | `18` | Must match training |
+| `--mp_steps` | `3` | Must match training |
+| `--batch_size` | `32` | Batch size for evaluation |
+
+### run_inference.py
+
+| Argument | Default | Description |
+|---|---|---|
+| `--test_name` | (required) | Test case name (e.g. `test_1`) |
+| `--edge_strategy` | `with_vn` | Edge strategy variant |
+| `--model_path` | `best_model_<edge_strategy>.pth` | Model checkpoint path |
+| `--data_dir` | `data` | Root data directory |
+| `--top_stability` | `15` | Top-K by predicted validity |
+| `--top_weight` | `15` | Top-K lightest from those |
+| `--output_dir` | `top_structs` | Deflection plot output directory |
+| `--hidden_dim` | `18` | Must match training |
+| `--mp_steps` | `3` | Must match training |
+
+---
+
+## Edge Strategy Comparison
+
+Each generation run produces three graph representations of the **same** structures:
+
+| Variant | Description |
+|---|---|
+| **`with_vn`** | Global shared virtual node connected to all elements — every element is exactly 2 hops from every other |
+| **`hop_edges`** | Domain-knowledge artificial edges connecting transfer-row nodes to upper-floor column nodes |
+| **`no_vn`** | No artificial edges; pure local message passing (baseline) |
+
+### Experimental results (500 train / 200 test per set)
+
+| Variant | Best Val Loss | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss |
+|---|---|---|---|---|---|
+| Hop edges (domain knowledge) | 0.0310 | 0.9690 | 0.3353 | 0.9954 | 0.0842 |
+| Virtual node | **0.0393** | **0.9724** | **0.2265** | 0.9939 | **0.0717** |
+| No edges (baseline) | 0.0350 | 0.9720 | 0.2830 | **0.9967** | 0.0777 |
+
+---
+
+## Project Structure
 
 ```
 fea-gnn-surrogate/
@@ -107,7 +269,7 @@ fea-gnn-surrogate/
 ├── scripts/
 │   ├── generate_dataset.py               # CLI: generate samples + save PyG graphs
 │   ├── train_surrogate.py                # CLI: train the GNN
-│   ├── evaluate_model.py                 # CLI: report test set metrics for a trained model
+│   ├── evaluate_model.py                 # CLI: report test set metrics
 │   └── run_inference.py                  # CLI: rank test structures by GNN predictions
 │
 └── tests/
@@ -116,265 +278,14 @@ fea-gnn-surrogate/
 
 ---
 
-## Installation
+## Stability Criteria
 
-Requires Python >= 3.9.
+An element is labelled **valid** (`y=1`) if it satisfies:
 
-```bash
-# Create and activate a virtual environment
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
+- **Beam vertical deflection:** normalised deflection < L / 2000, where L is the span length
+- **Column lateral drift:** inter-storey drift < H / 500, where H is the storey height
 
-# Install PyTorch (CPU example; see https://pytorch.org for CUDA versions)
-pip install torch
-
-# Install PyTorch Geometric
-pip install torch_geometric
-
-# Install this package and remaining dependencies in editable mode
-pip install -e .
-```
-
----
-
-## Configuration
-
-`config.json` defines the building geometry for each dataset. It contains these sections:
-
-- `train` — the training layout (all column positions available, storey count randomised during generation)
-- `test_1` through `test_5` — five different test layouts with specific column positions
-
-Each section has these fields:
-
-| Field | Meaning |
-|---|---|
-| `num_cols` | Grid width (number of column positions) |
-| `num_rows` | Number of storeys (randomised +-3 during training) |
-| `transfer_row` | Storey index of the transfer slab |
-| `horizontal_scale` | Bay width in metres per grid unit |
-| `vertical_scale` | Storey height in metres |
-| `possible_columns_up` | Candidate column positions above the transfer slab |
-| `possible_columns_down` | Candidate column positions below the transfer slab |
-| `distance_lower_bound` | Minimum allowable column spacing (metres) |
-| `distance_upper_bound` | Maximum allowable span (metres) |
-
----
-
-## Quick start — full pipeline
-
-Below is the complete sequence of commands to go from raw data to ranked structures. Each stage is explained in detail in the sections that follow.
-
-```bash
-# Stage 1a — Generate 1000 labelled training structures
-#            (saves hop_edges, with_vn, and no_vn variants automatically)
-python scripts/generate_dataset.py --mode train --num_samples 1000 --save_graphs
-
-# Stage 1b — Generate 500 test structures
-python scripts/generate_dataset.py --mode test_1 --num_samples 500 --save_graphs
-
-# Stage 2 — Train the GNN surrogate (example: virtual-node variant)
-python scripts/train_surrogate.py \
-    --dataset_path data/train/with_vn/dataset/pyg_line_graphs.pkl \
-    --save_path best_model_vn.pth \
-    --epochs 100
-
-# Stage 2b — Report generalisation metrics on test sets
-python scripts/evaluate_model.py \
-    --model_path best_model_vn.pth \
-    --test_dataset_paths \
-        data/test_1/with_vn/dataset/pyg_line_graphs.pkl \
-        data/test_2/with_vn/dataset/pyg_line_graphs.pkl
-
-# Stage 3 — Run inference on the test data: rank structures and produce deflection plots
-python scripts/run_inference.py --test_name test_1
-```
-
----
-
-## Stage 1 — Generate datasets
-
-You need to generate **two** datasets: one for training and one for testing. Both run FEA to label every beam and column as valid or invalid.
-
-A single generation run produces **three edge-strategy variants** from the same structures simultaneously — see [Edge Strategy Comparison](#edge-strategy-comparison) for details.
-
-### 1a. Generate training data
-
-```bash
-python scripts/generate_dataset.py --mode train --num_samples 1000 --save_graphs
-```
-
-This generates 1000 random frame structures using the `train` section of `config.json`, runs FEA on each, labels every element, and saves three PyG datasets:
-
-```
-data/train/hop_edges/dataset/pyg_line_graphs.pkl   # domain-knowledge hop edges
-data/train/with_vn/dataset/pyg_line_graphs.pkl     # global shared virtual node
-data/train/no_vn/dataset/pyg_line_graphs.pkl       # no artificial edges (baseline)
-```
-
-All three files represent the **same 1000 structures** — only the graph topology differs.
-
-### 1b. Generate test data
-
-```bash
-python scripts/generate_dataset.py --mode test_1 --num_samples 500 --save_graphs
-```
-
-This does the same using the `test_1` geometry. The `--save_graphs` flag saves the raw and simplified NetworkX graphs alongside the PyG datasets:
-
-```
-data/test_1/hop_edges/dataset/pyg_line_graphs.pkl
-data/test_1/with_vn/dataset/pyg_line_graphs.pkl
-data/test_1/no_vn/dataset/pyg_line_graphs.pkl
-data/test_1/raw/graphs/0.pkl, 1.pkl, ...           # raw NetworkX graphs
-data/test_1/simplified/graphs/0.pkl, ...           # simplified NetworkX graphs
-```
-
-The raw and simplified graphs are needed in Stage 3 to re-run FEA on the top-ranked structures and produce deflection plots.
-
-You can generate data for any test section (`test_2`, `test_3`, etc.) by changing `--mode`.
-
-### All arguments
-
-| Argument | Default | Description |
-|---|---|---|
-| `--mode` | `train` | Which section of `config.json` to use: `train`, `test_1`, `test_2`, `test_3`, `test_4`, `test_5` |
-| `--num_samples` | `1000` | Number of structures to generate |
-| `--config` | `config.json` | Path to the configuration file |
-| `--output_dir` | `data` | Root output directory |
-| `--output_name` | `pyg_line_graphs.pkl` | Filename for the saved PyG dataset |
-| `--visualize` | off | Save a deflection plot (PNG) for each generated structure |
-| `--skip_fea` | off | Skip FEA. Structures will have no validity labels and cannot be used for training |
-| `--save_graphs` | off | Also save raw and simplified NetworkX graphs. Required for deflection plots in Stage 3 |
-
----
-
-## Stage 2 — Train the GNN surrogate
-
-Train the model on one of the datasets generated in Stage 1a. Pick the variant you want to evaluate (see [Edge Strategy Comparison](#edge-strategy-comparison)):
-
-```bash
-# Virtual-node variant
-python scripts/train_surrogate.py \
-    --dataset_path data/train/with_vn/dataset/pyg_line_graphs.pkl \
-    --save_path best_model_vn.pth \
-    --epochs 100
-
-# Domain-knowledge hop-edges variant
-python scripts/train_surrogate.py \
-    --dataset_path data/train/hop_edges/dataset/pyg_line_graphs.pkl \
-    --save_path best_model_hop.pth \
-    --epochs 100
-
-# Baseline (no artificial edges)
-python scripts/train_surrogate.py \
-    --dataset_path data/train/no_vn/dataset/pyg_line_graphs.pkl \
-    --save_path best_model_novn.pth \
-    --epochs 100
-```
-
-The checkpoint contains both the model weights and the normalisation statistics from the training split, so inference does not need a separate stats file.
-
-### All arguments
-
-| Argument | Default | Description |
-|---|---|---|
-| `--dataset_path` | (required) | Path to the training `.pkl` dataset |
-| `--epochs` | `100` | Number of training epochs |
-| `--batch_size` | `32` | Mini-batch size |
-| `--hidden_dim` | `18` | Hidden dimension of GNN layers |
-| `--mp_steps` | `3` | Number of shared-weight message-passing steps |
-| `--lr` | `0.01` | Adam learning rate |
-| `--test_size` | `0.3` | Fraction of data held out for validation |
-| `--save_path` | `best_model.pth` | Where to save the best model checkpoint |
-| `--log_dir` | `./logs/` | TensorBoard log directory |
-
----
-
-## Stage 2b — Evaluate generalisation on test sets
-
-The validation split during training is drawn from the same plan as the training data and is used only for model selection (checkpoint saving). To measure how well the model generalises to different building plans, run the dedicated evaluation script on the test datasets:
-
-```bash
-python scripts/evaluate_model.py \
-    --model_path best_model_vn.pth \
-    --test_dataset_paths \
-        data/test_1/with_vn/dataset/pyg_line_graphs.pkl \
-        data/test_2/with_vn/dataset/pyg_line_graphs.pkl
-```
-
-Output:
-
-```
-Model:  best_model_vn.pth
-Dataset                                             Loss       AUC
-----------------------------------------------------------------------
-  with_vn                                         0.2265    0.9724
-  with_vn                                         0.0717    0.9939
-```
-
-### All arguments
-
-| Argument | Default | Description |
-|---|---|---|
-| `--model_path` | (required) | Path to trained model checkpoint (`.pth`) |
-| `--test_dataset_paths` | (required) | One or more paths to test `.pkl` datasets |
-| `--hidden_dim` | `18` | Must match the value used during training |
-| `--mp_steps` | `3` | Must match the value used during training |
-| `--batch_size` | `32` | Batch size for evaluation |
-
-Monitor training:
-
-```bash
-tensorboard --logdir logs/
-```
-
-### Model architecture
-
-`SharedMPNN` is a lightweight message-passing network:
-
-1. **Linear projection** — maps 13 input features to `hidden_dim`
-2. **Shared GraphConv** — applied `mp_steps` times with the same weights (weight-tied message passing)
-3. **Linear readout** — maps `hidden_dim` to 1 logit per node (element)
-
-Training uses `BCEWithLogitsLoss` with a class-rebalancing `pos_weight` to handle the imbalance between valid (majority) and invalid elements.
-
-For the reasoning behind these architectural choices — including the line graph transformation, feature engineering, and message-passing design — see **[GNN Model Intuitions](GNN_model_intuitions.md)**.
-
----
-
-## Stage 3 — Inference on test structures
-
-Use the trained model to rank test structures by predicted validity, then re-run FEA on the best candidates to produce deflection plots:
-
-```bash
-python scripts/run_inference.py \
-    --test_name test_1 \
-    --model_path best_model.pth
-```
-
-**Prerequisite:** You must have generated the test dataset in Stage 1b with `--save_graphs`.
-
-### What this does
-
-1. Loads the test PyG dataset and normalises features using the stats stored in the checkpoint
-2. Runs the GNN to compute a validity score for each structure (minimum predicted probability across all elements)
-3. Ranks structures by validity score, then filters by weight to find the lightest valid designs
-4. Re-runs full FEA on the top structures and saves deflection plots to `--output_dir`
-
-### All arguments
-
-| Argument | Default | Description |
-|---|---|---|
-| `--test_name` | (required) | Config section for the test case (`test_1`, `test_2`, etc.) |
-| `--model_path` | `best_model.pth` | Path to trained model checkpoint |
-| `--data_dir` | `data` | Root data directory, must match `--output_dir` used in Stage 1 |
-| `--dataset_path` | auto | Override the PyG dataset path (by default derived from `--data_dir` and `--test_name`) |
-| `--config` | `config.json` | Path to the configuration file |
-| `--top_stability` | `15` | Keep top-K structures by predicted validity score |
-| `--top_weight` | `15` | From those, keep the top-K lightest structures |
-| `--output_dir` | `top_structs` | Directory for deflection plot output |
-| `--hidden_dim` | `18` | Must match the value used during training |
-| `--mp_steps` | `3` | Must match the value used during training |
+A structure is considered valid only if **all** of its elements are valid.
 
 ---
 
@@ -410,7 +321,7 @@ GraphHandler.save_pyg_line_graphs(
 with open("data/test_1/with_vn/dataset/pyg_line_graphs.pkl", "rb") as f:
     test_data = pickle.load(f)
 
-model, norm_stats = load_model("best_model_vn.pth", num_features=13)
+model, norm_stats = load_model("best_model_with_vn.pth", num_features=13)
 if norm_stats:
     normalize_data(test_data, norm_stats)
 
@@ -421,56 +332,7 @@ print(df)
 
 ---
 
-## Stability criteria
-
-An element is labelled **valid** (`y=1`) if it satisfies:
-
-- **Beam vertical deflection:** normalised deflection < L / 2000, where L is the span length
-- **Column lateral drift:** inter-storey drift < H / 500, where H is the storey height
-
-A structure is considered valid only if **all** of its elements are valid.
-
----
-
----
-
-## Edge Strategy Comparison
-
-Each generation run produces three graph representations of the **same** structures. This allows a controlled comparison of how the graph connectivity affects GNN accuracy:
-
-| Variant | Description | Subdirectory |
-|---|---|---|
-| **`hop_edges`** | Domain-knowledge artificial edges connecting transfer-row nodes to upper-floor column nodes (original approach) | `hop_edges/` |
-| **`with_vn`** | Global shared virtual node connected bidirectionally to all elements — every element is exactly 2 hops from every other | `with_vn/` |
-| **`no_vn`** | No artificial edges; pure local message passing along physical connections only (baseline) | `no_vn/` |
-
-The `hop_edges` and `with_vn` artificial nodes/edges have `real=False` (feature index 4) and are **masked out** of the training loss and inference outputs — they act purely as message-passing conduits.
-
-### Experimental results (500 train / 200 test per set)
-
-| Variant | Best Val Loss | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss |
-|---|---|---|---|---|---|
-| Hop edges (domain knowledge) | 0.0310 | 0.9690 | 0.3353 | 0.9954 | 0.0842 |
-| Virtual node | **0.0393** | **0.9724** | **0.2265** | 0.9939 | **0.0717** |
-| No edges (baseline) | 0.0350 | 0.9720 | 0.2830 | **0.9967** | 0.0777 |
-
-All three variants achieve similar AUC (~0.97 on test_1, ~0.99 on test_2). The virtual node matches or outperforms the hand-coded hop edges on test loss, without requiring any domain-specific graph engineering. The baseline performs surprisingly well, suggesting learned node features carry most of the predictive signal.
-
----
-
-## Pre-trained models
-
-Three pre-trained checkpoints are included, each trained on 500 samples with the corresponding edge strategy:
-
-| File | Variant | Best Val Loss |
-|---|---|---|
-| `best_model_hop.pth` | Hop edges (domain knowledge) | 0.0310 |
-| `best_model_vn.pth` | Virtual node | 0.0393 |
-| `best_model_novn.pth` | No edges (baseline) | 0.0350 |
-
----
-
-## Related resources
+## Related Resources
 
 The following tutorials are published on [Engineering Skills](https://www.engineeringskills.com). Readers who are new to machine learning are encouraged to go through them in the order listed below, as each one builds on the concepts introduced in the previous.
 
