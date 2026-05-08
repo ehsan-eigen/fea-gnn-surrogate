@@ -32,8 +32,8 @@ def main():
     parser.add_argument("--test_sets", type=str, nargs="*", default=None,
                         help="Test sets to evaluate after training (e.g. test_1 test_2). "
                              "Uses the same edge strategy as training.")
-    parser.add_argument("--data_dir", type=str, default="data",
-                        help="Root data directory (default: data)")
+    parser.add_argument("--data_dir", type=str, default="hf://ehsan94/fea-gnn-surrogate",
+                        help="Root data directory or hf://owner/repo (default: hf://ehsan94/fea-gnn-surrogate)")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--hidden_dim", type=int, default=18, help="Hidden dimension")
@@ -43,6 +43,9 @@ def main():
                         help="Model save path (default: best_model_<edge_strategy>.pth)")
     parser.add_argument("--log_dir", type=str, default="./logs/", help="Tensorboard log directory")
     parser.add_argument("--test_size", type=float, default=0.3, help="Validation split ratio")
+    parser.add_argument("--hf_repo", type=str, default="ehsan94/fea-gnn-surrogate",
+                        help="Hugging Face model repo to upload trained model to "
+                             "(default: ehsan94/fea-gnn-surrogate). Reads HF_TOKEN from environment.")
     args = parser.parse_args()
 
     if args.save_path is None:
@@ -81,6 +84,7 @@ def main():
         save_path=args.save_path,
         log_dir=args.log_dir,
         norm_stats=norm_stats,
+        hf_repo=args.hf_repo,
     )
 
     # Evaluate on test sets if requested

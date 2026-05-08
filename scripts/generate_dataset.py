@@ -6,6 +6,18 @@ from fea_gnn_surrogate.generate import generate_samples
 from fea_gnn_surrogate.graph.graph_utils import GraphHandler
 
 
+def _upload_to_hf(local_file, path_in_repo, repo_id):
+    from huggingface_hub import upload_file
+    upload_file(
+        path_or_fileobj=local_file,
+        path_in_repo=path_in_repo,
+        repo_id=repo_id,
+        repo_type="dataset",
+        token=os.environ.get("HF_TOKEN"),
+    )
+    print(f"  Uploaded to hf://{repo_id}/{path_in_repo}")
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Generate random frame structures, run FEA to label elements, "
@@ -36,6 +48,9 @@ examples:
     parser.add_argument("--no_save_graphs", action="store_true",
                         help="Do not save raw and simplified NetworkX graphs to disk "
                              "(they are saved by default for visualization in Stage 3)")
+    parser.add_argument("--hf_repo", type=str, default="ehsan94/fea-gnn-surrogate",
+                        help="Hugging Face dataset repo to upload datasets to "
+                             "(default: ehsan94/fea-gnn-surrogate). Reads HF_TOKEN from environment.")
     args = parser.parse_args()
 
     save_graphs = not args.no_save_graphs
@@ -62,7 +77,11 @@ examples:
         save_dir = os.path.join(args.output_dir, args.mode, variant_name, "dataset")
         GraphHandler.save_pyg_line_graphs(graphs, save_dir, args.output_name,
                                           has_label=has_label, use_virtual_node=use_vn)
-        print(f"Saved {len(graphs)} graphs to {os.path.join(save_dir, args.output_name)}")
+        local_file = os.path.join(save_dir, args.output_name)
+        print(f"Saved {len(graphs)} graphs to {local_file}")
+        if args.hf_repo:
+            path_in_repo = f"{args.mode}/{variant_name}/dataset/{args.output_name}"
+            _upload_to_hf(local_file, path_in_repo, args.hf_repo)
 
 
 if __name__ == "__main__":

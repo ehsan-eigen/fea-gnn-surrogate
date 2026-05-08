@@ -1,11 +1,33 @@
+import os
 import pickle
 import torch
 from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
 
 
+def _resolve_dataset_path(path):
+    """If path uses hf://owner/repo/path/file.pkl, download and return local path."""
+    if not path.startswith("hf://"):
+        return path
+    # hf://owner/repo-name/a/b/c.pkl  →  repo_id="owner/repo-name", filename="a/b/c.pkl"
+    parts = path[len("hf://"):].split("/")
+    if len(parts) < 3:
+        raise ValueError("hf:// dataset paths must be hf://owner/repo-name/path/to/file.pkl")
+    repo_id = "/".join(parts[:2])
+    filename = "/".join(parts[2:])
+    from huggingface_hub import hf_hub_download
+    local_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type="dataset",
+        token=os.environ.get("HF_TOKEN"),
+    )
+    return local_path
+
+
 def load_dataset(path):
-    with open(path, "rb") as f:
+    local_path = _resolve_dataset_path(path)
+    with open(local_path, "rb") as f:
         pyg_data_list = pickle.load(f)
     return pyg_data_list
 

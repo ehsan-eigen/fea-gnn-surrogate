@@ -1,3 +1,4 @@
+import os
 import time
 import torch
 import numpy as np
@@ -56,7 +57,8 @@ def validate(model, dataloader, criterion):
 
 
 def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
-          save_path="best_model.pth", log_dir="./logs/", norm_stats=None):
+          save_path="best_model.pth", log_dir="./logs/", norm_stats=None,
+          hf_repo=None):
     best_val_loss = float("inf")
     best_model_state_dict = None
 
@@ -88,5 +90,17 @@ def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
         torch.save(checkpoint, save_path)
         print(f"Best model saved to {save_path}")
         print(f"Best validation loss: {best_val_loss:.4f}")
+
+        if hf_repo is not None:
+            from huggingface_hub import upload_file
+            filename = os.path.basename(save_path)
+            upload_file(
+                path_or_fileobj=save_path,
+                path_in_repo=filename,
+                repo_id=hf_repo,
+                repo_type="model",
+                token=os.environ.get("HF_TOKEN"),
+            )
+            print(f"Model uploaded to hf://{hf_repo}/{filename}")
 
     return best_model_state_dict

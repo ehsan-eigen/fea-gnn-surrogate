@@ -1,3 +1,4 @@
+import os
 import torch
 import numpy as np
 import pandas as pd
@@ -7,9 +8,35 @@ from fea_gnn_surrogate.surrogate.model import SharedMPNN
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
 
 
+def _resolve_model_path(model_path):
+    """If model_path uses hf://owner/repo/filename, download and return local path."""
+    if not model_path.startswith("hf://"):
+        return model_path
+    # hf://owner/repo-name/filename.pth  →  repo_id="owner/repo-name", filename="filename.pth"
+    parts = model_path[len("hf://"):].split("/")
+    if len(parts) < 3:
+        raise ValueError(
+            "hf:// paths must be hf://owner/repo-name/filename.pth"
+        )
+    repo_id = "/".join(parts[:2])
+    filename = "/".join(parts[2:])
+    from huggingface_hub import hf_hub_download
+    local_path = hf_hub_download(
+        repo_id=repo_id,
+        filename=filename,
+        repo_type="model",
+        token=os.environ.get("HF_TOKEN"),
+    )
+    print(f"Downloaded model from hf://{repo_id}/{filename}")
+    return local_path
+
+
 def load_model(model_path, num_features, hidden_dim=18, output_dim=1, num_mp_steps=3):
-    """Load a trained model and normalization stats from a checkpoint."""
-    checkpoint = torch.load(model_path, weights_only=False)
+    """Load a trained model and normalization stats from a checkpoint.
+
+    model_path can be a local path or hf://owner/repo-name/filename.pth.
+    """
+    checkpoint = torch.load(_resolve_model_path(model_path), weights_only=False)
 
     model = SharedMPNN(num_features, hidden_dim, output_dim, num_mp_steps)
 

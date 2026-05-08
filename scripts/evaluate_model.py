@@ -32,8 +32,8 @@ examples:
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")
-    parser.add_argument("--data_dir", type=str, default="data",
-                        help="Root data directory (default: data)")
+    parser.add_argument("--data_dir", type=str, default="hf://ehsan94/fea-gnn-surrogate",
+                        help="Root data directory or hf://owner/repo (default: hf://ehsan94/fea-gnn-surrogate)")
     parser.add_argument("--hidden_dim", type=int, default=18,
                         help="Hidden dimension, must match training (default: 18)")
     parser.add_argument("--mp_steps", type=int, default=3,
