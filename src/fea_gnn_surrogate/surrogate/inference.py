@@ -9,7 +9,7 @@ from fea_gnn_surrogate.surrogate.dataset import normalize_data
 
 
 def _resolve_model_path(model_path):
-    """If model_path uses hf://owner/repo/filename, download and return local path."""
+    """If model_path uses hf://owner/repo/filename, check locally first, then download."""
     if not model_path.startswith("hf://"):
         return model_path
     # hf://owner/repo-name/filename.pth  →  repo_id="owner/repo-name", filename="filename.pth"
@@ -20,6 +20,11 @@ def _resolve_model_path(model_path):
         )
     repo_id = "/".join(parts[:2])
     filename = "/".join(parts[2:])
+    # Check locally before attempting a network download
+    for local_path in [filename, os.path.basename(filename)]:
+        if os.path.exists(local_path):
+            print(f"Using local model: {local_path}")
+            return local_path
     from huggingface_hub import hf_hub_download
     local_path = hf_hub_download(
         repo_id=repo_id,

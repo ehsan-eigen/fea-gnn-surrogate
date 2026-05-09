@@ -6,7 +6,7 @@ from sklearn.model_selection import train_test_split
 
 
 def _resolve_dataset_path(path):
-    """If path uses hf://owner/repo/path/file.pkl, download and return local path."""
+    """If path uses hf://owner/repo/path/file.pkl, check locally first, then download."""
     if not path.startswith("hf://"):
         return path
     # hf://owner/repo-name/a/b/c.pkl  →  repo_id="owner/repo-name", filename="a/b/c.pkl"
@@ -15,6 +15,12 @@ def _resolve_dataset_path(path):
         raise ValueError("hf:// dataset paths must be hf://owner/repo-name/path/to/file.pkl")
     repo_id = "/".join(parts[:2])
     filename = "/".join(parts[2:])
+    # Check locally before attempting a network download
+    for local_root in ["data", "."]:
+        local_path = os.path.join(local_root, filename)
+        if os.path.exists(local_path):
+            print(f"Using local file: {local_path}")
+            return local_path
     from huggingface_hub import hf_hub_download
     local_path = hf_hub_download(
         repo_id=repo_id,
