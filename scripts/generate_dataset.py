@@ -67,6 +67,13 @@ examples:
 
     has_label = not args.skip_fea
 
+    # Save base NX line graphs (topology + attributes, no feature extraction).
+    # Re-run only extract_features.py when changing features — no need to redo FEA.
+    base_dir = os.path.join(args.output_dir, args.mode, "base")
+    GraphHandler.save_base_line_graphs(line_graphs, base_dir, "line_graphs.pkl")
+    GraphHandler.save_base_line_graphs(line_graphs_hop, base_dir, "line_graphs_hop.pkl")
+    print(f"Saved base line graphs to {base_dir}/")
+
     variants = [
         ("hop_edges", line_graphs_hop, False),
         ("with_vn", line_graphs, True),

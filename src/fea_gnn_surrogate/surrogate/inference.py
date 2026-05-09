@@ -6,6 +6,7 @@ import pickle
 
 from fea_gnn_surrogate.surrogate.model import SharedMPNN
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
+from fea_gnn_surrogate.graph.graph_utils import FEATURE_NAMES
 
 
 def _resolve_model_path(model_path):
@@ -65,7 +66,7 @@ def predict(model, data_list, threshold=0.5):
         for data in data_list:
             logits = model(data).view(-1)
             probs = torch.sigmoid(logits)
-            mask = data.x[:, 4] == 1  # exclude virtual node (real=0)
+            mask = data.x[:, FEATURE_NAMES.index("real")] == 1
             probs = probs[mask]
             preds = (probs >= threshold).int()
             results.append({

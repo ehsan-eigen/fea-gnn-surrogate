@@ -56,6 +56,9 @@ Raw cross-section dimensions are replaced by features grounded in structural mec
 | **Transfer beam flag** | Identifies elements carrying redistributed column loads |
 | **Cantilever flag** | Flags elements with a free end (high deflection risk) |
 | **Level & position ratios** | Encode location in the load path |
+| **Laplacian PE (k=8)** | Spectral coordinates from the normalized graph Laplacian — encode each element's position within the load-path topology |
+
+Each node in the line graph has 21 features (13 structural + 8 Laplacian positional encoding). Feature names and normalization targets are defined in `graph_utils.py` as `FEATURE_NAMES`, `NORM_COLUMN_FEATURES`, and `NORM_BEAM_FEATURES`.
 
 ### 3. Shared-Weight Message Passing (SharedMPNN)
 
@@ -103,7 +106,18 @@ python scripts/generate_dataset.py --mode test_1 --num_samples 500
 python scripts/generate_dataset.py --mode test_2 --num_samples 500
 ```
 
-Each run produces three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`) from the same structures, plus raw/simplified graphs for visualization. By default the generated `.pkl` files are uploaded to the `ehsan94/fea-gnn-surrogate` Hugging Face dataset repository (requires `HF_TOKEN`). Pass `--hf_repo ""` to skip the upload.
+Each run:
+- Generates structures, runs FEA, and saves raw NetworkX line graphs to `data/{mode}/base/` (the **base dataset** — topology + attributes, no feature extraction)
+- Extracts PyG features and saves three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`) from the same structures
+
+By default the generated `.pkl` files are uploaded to the `ehsan94/fea-gnn-surrogate` Hugging Face dataset repository (requires `HF_TOKEN`). Pass `--hf_repo ""` to skip the upload.
+
+**Changing features without re-running FEA:** If you modify feature extraction (e.g. add or remove a feature), you can re-extract from the saved base data without regenerating structures or re-running FEA:
+
+```bash
+python scripts/extract_features.py --mode train
+python scripts/extract_features.py --mode test_1
+```
 
 ### 2. Train
 
@@ -193,6 +207,19 @@ Each section has these fields:
 | `--skip_fea` | off | Skip FEA (no labels — cannot train) |
 | `--no_save_graphs` | off | Skip saving raw/simplified NetworkX graphs |
 | `--hf_repo` | `ehsan94/fea-gnn-surrogate` | Hugging Face dataset repo to upload to (reads `HF_TOKEN`); pass `""` to skip |
+
+Always saves base NX line graphs to `data/{mode}/base/` alongside the PyG variants.
+
+### extract_features.py
+
+Re-extract PyG features from saved base NX line graphs. Use this when changing features — avoids re-running FEA.
+
+| Argument | Default | Description |
+|---|---|---|
+| `--mode` | `train` | Config section (must match a previous `generate_dataset.py` run) |
+| `--data_dir` | `data` | Root data directory |
+| `--output_name` | `pyg_line_graphs.pkl` | Filename for the saved PyG dataset |
+| `--skip_fea` | off | Set if the base graphs have no labels (generated with `--skip_fea`) |
 
 ### train_surrogate.py
 
@@ -286,7 +313,8 @@ fea-gnn-surrogate/
 │       └── inference.py                  # load_model, predict, rank_structures
 │
 ├── scripts/
-│   ├── generate_dataset.py               # CLI: generate samples + save PyG graphs
+│   ├── generate_dataset.py               # CLI: generate samples + save base NX graphs + PyG graphs
+│   ├── extract_features.py               # CLI: re-extract PyG features from base NX graphs (no FEA)
 │   ├── train_surrogate.py                # CLI: train the GNN
 │   ├── evaluate_model.py                 # CLI: report test set metrics
 │   └── run_inference.py                  # CLI: rank test structures by GNN predictions
@@ -321,7 +349,11 @@ line_graphs, line_graphs_hop = generate_samples(
     config_path="config.json", mode="train", num_episodes=100
 )
 
-# Save all three variants from the same structures
+# Save base NX line graphs (topology + attributes) — re-use when features change
+GraphHandler.save_base_line_graphs(line_graphs, "data/train/base", "line_graphs.pkl")
+GraphHandler.save_base_line_graphs(line_graphs_hop, "data/train/base", "line_graphs_hop.pkl")
+
+# Extract PyG features and save all three edge-strategy variants
 GraphHandler.save_pyg_line_graphs(
     line_graphs_hop, "data/train/hop_edges/dataset", "pyg_line_graphs.pkl",
     use_virtual_node=False,
@@ -338,7 +370,7 @@ GraphHandler.save_pyg_line_graphs(
 # Load a test dataset and run inference (local path or hf:// URI both work)
 test_data = load_dataset("hf://ehsan94/fea-gnn-surrogate/test_1/with_vn/dataset/pyg_line_graphs.pkl")
 
-model, norm_stats = load_model("hf://ehsan94/fea-gnn-surrogate/best_model_with_vn.pth", num_features=13)
+model, norm_stats = load_model("hf://ehsan94/fea-gnn-surrogate/best_model_with_vn.pth", num_features=21)
 if norm_stats:
     normalize_data(test_data, norm_stats)
 

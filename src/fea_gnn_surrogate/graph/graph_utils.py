@@ -10,7 +10,48 @@ from torch_geometric.data import Data
 import math
 
 
-def _laplacian_pe(edge_index, num_nodes, k=8):
+LAPLACIAN_PE_DIM = 8
+
+# Feature names for the PyG node feature matrix (line graph: nodes = structural elements).
+# Binary/categorical features (not normalized):
+#   is_column, cant, foundation, transfer, real
+# Structural context features (already bounded, not normalized):
+#   level_ratio, col_position, level
+# Section properties (normalized per element type — vary with random sizing):
+#   I_col, A_col:  moment of inertia and area projected onto column axis (sin θ)
+#   I_beam, A_beam, span:  moment of inertia, area, and length projected onto beam axis (cos θ)
+# Spectral features (bounded in [-1, 1] from normalized Laplacian, not normalized):
+#   pe_0 .. pe_{k-1}
+FEATURE_NAMES = [
+    "is_column",    # binary: rotation > 0.01
+    "cant",         # binary: cantilever element
+    "foundation",   # binary: connected to support
+    "transfer",     # binary: on transfer level
+    "real",         # binary: 0 for virtual node
+    "level_ratio",  # vertical position relative to transfer level
+    "col_position", # col_l2r_ratio * sin(rotation)
+    "level",        # floor level
+    "I_col",        # D³·W·sin(θ) — column moment of inertia
+    "A_col",        # D·W·sin(θ) — column cross-section area
+    "I_beam",       # D³·W·cos(θ) — beam moment of inertia
+    "A_beam",       # D·W·cos(θ) — beam cross-section area
+    "span",         # dist·cos(θ) — beam span length
+] + [f"pe_{i}" for i in range(LAPLACIAN_PE_DIM)]
+
+# Which features to normalize, keyed by element type.
+# Column section sizes and beam section sizes/spans vary with random sizing noise,
+# so they need z-score normalization. Everything else is either binary, already
+# bounded, or spectrally bounded.
+NORM_COLUMN_FEATURES = ["I_col", "A_col"]
+NORM_BEAM_FEATURES = ["I_beam", "A_beam", "span"]
+
+
+def feature_indices(names):
+    """Return tensor column indices for the given feature names."""
+    return [FEATURE_NAMES.index(n) for n in names]
+
+
+def _laplacian_pe(edge_index, num_nodes, k=LAPLACIAN_PE_DIM):
     """Compute Laplacian Positional Encoding for each node.
 
     Returns an [N, k] tensor where each node gets k spectral coordinates.
@@ -545,6 +586,21 @@ class GraphHandler:
 
         with open(file_path, "wb") as file:
             pickle.dump(G, file)
+
+    @staticmethod
+    def save_base_line_graphs(nx_graphs, directory, name="line_graphs.pkl"):
+        """Save NetworkX line graphs as base data (topology + attributes, no feature extraction)."""
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        path = os.path.join(directory, name)
+        with open(path, "wb") as f:
+            pickle.dump(nx_graphs, f)
+
+    @staticmethod
+    def load_base_line_graphs(path):
+        """Load NetworkX line graphs from base data."""
+        with open(path, "rb") as f:
+            return pickle.load(f)
 
     @staticmethod
     def save_pyg_line_graphs(nx_graphs, dir, name, has_label=True, use_virtual_node=True):
