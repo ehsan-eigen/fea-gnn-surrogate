@@ -10,6 +10,26 @@ from torch_geometric.data import Data
 import math
 
 
+def _laplacian_pe(edge_index, num_nodes, k=8):
+    """Compute Laplacian Positional Encoding for each node.
+
+    Returns an [N, k] tensor where each node gets k spectral coordinates.
+    """
+    row = edge_index[0].numpy()
+    col = edge_index[1].numpy()
+    A = np.zeros((num_nodes, num_nodes))
+    A[row, col] = 1.0
+    A = np.maximum(A, A.T)  # symmetrize
+    deg = A.sum(axis=1)
+    d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+    L = np.eye(num_nodes) - d_inv_sqrt[:, None] * A * d_inv_sqrt[None, :]
+    _, vecs = np.linalg.eigh(L)
+    pe = vecs[:, 1 : k + 1]  # skip trivial eigenvector 0
+    if pe.shape[1] < k:
+        pe = np.pad(pe, ((0, 0), (0, k - pe.shape[1])))
+    return torch.tensor(pe, dtype=torch.float)
+
+
 class GraphHandler:
     def __init__(self, conf):
         self.num_cols = conf["num_cols"]
@@ -561,6 +581,10 @@ class GraphHandler:
                 dtype=torch.float,
             )
             weight = sum([node["D"] * node["W"] * node["dist"] * int(node.get("real", 1)) for node in nodes])
+
+            # Laplacian Positional Encoding (computed on line graph before virtual node)
+            pe = _laplacian_pe(edge_index, num_nodes=x.shape[0], k=8)
+            x = torch.cat([x, pe], dim=1)  # [N, 13] → [N, 21]
 
             if use_virtual_node:
                 # Add virtual node (all-zero features; real=0 at index 4 marks it as non-physical)

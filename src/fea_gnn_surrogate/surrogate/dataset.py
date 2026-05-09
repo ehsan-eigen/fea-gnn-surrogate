@@ -60,8 +60,8 @@ def compute_normalization_stats(train_data):
     mask = X[:, 0] == 1
     mask_mean = X[mask, 8:10].mean(dim=0)
     mask_std = X[mask, 8:10].std(dim=0)
-    not_mask_mean = X[~mask, 10:].mean(dim=0)
-    not_mask_std = X[~mask, 10:].std(dim=0)
+    not_mask_mean = X[~mask, 10:13].mean(dim=0)
+    not_mask_std = X[~mask, 10:13].std(dim=0)
     return {
         "mask_mean": mask_mean,
         "mask_std": mask_std,
@@ -80,5 +80,5 @@ def normalize_data(data_list, stats):
     for data in data_list:
         mask = data.x[:, 0] == 1
         data.x[mask, 8:10] = (data.x[mask, 8:10] - mask_mean) / mask_std
-        data.x[~mask, 10:] = (data.x[~mask, 10:] - not_mask_mean) / not_mask_std
+        data.x[~mask, 10:13] = (data.x[~mask, 10:13] - not_mask_mean) / not_mask_std
     return data_list
