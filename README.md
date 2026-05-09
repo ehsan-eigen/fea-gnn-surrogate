@@ -82,6 +82,12 @@ pip install torch_geometric
 pip install -e .
 ```
 
+`huggingface_hub` is included as a dependency and installed automatically. To upload datasets or models to Hugging Face, set the `HF_TOKEN` environment variable:
+
+```bash
+export HF_TOKEN=your_token_here
+```
+
 ---
 
 ## Quick Start
@@ -89,7 +95,7 @@ pip install -e .
 ### 1. Generate data
 
 ```bash
-# Training data (1000 structures)
+# Training data (1000 structures) — saved locally and uploaded to Hugging Face
 python scripts/generate_dataset.py --mode train --num_samples 1000
 
 # Test data
@@ -97,7 +103,7 @@ python scripts/generate_dataset.py --mode test_1 --num_samples 500
 python scripts/generate_dataset.py --mode test_2 --num_samples 500
 ```
 
-Each run produces three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`) from the same structures, plus raw/simplified graphs for visualization.
+Each run produces three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`) from the same structures, plus raw/simplified graphs for visualization. By default the generated `.pkl` files are uploaded to the `ehsan94/fea-gnn-surrogate` Hugging Face dataset repository (requires `HF_TOKEN`). Pass `--hf_repo ""` to skip the upload.
 
 ### 2. Train
 
@@ -105,7 +111,9 @@ Each run produces three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`)
 python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100
 ```
 
-This saves the model to `best_model_with_vn.pth` by default. To also report test metrics after training:
+Training data is loaded from Hugging Face by default (`hf://ehsan94/fea-gnn-surrogate`). To use a local directory instead, pass `--data_dir data`.
+
+The best model is saved to `best_model_with_vn.pth` and uploaded to the Hugging Face model repository specified by `--hf_repo` (requires `HF_TOKEN`). To also report test metrics after training:
 
 ```bash
 python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100 \
@@ -116,6 +124,14 @@ python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 
 
 ```bash
 python scripts/evaluate_model.py --model_path best_model_with_vn.pth \
+    --test_sets test_1 test_2
+```
+
+Test data is loaded from Hugging Face by default. Both `--model_path` and `--data_dir` accept `hf://owner/repo` paths:
+
+```bash
+python scripts/evaluate_model.py \
+    --model_path hf://ehsan94/fea-gnn-surrogate/best_model_with_vn.pth \
     --test_sets test_1 test_2
 ```
 
@@ -172,9 +188,11 @@ Each section has these fields:
 | `--num_samples` | `1000` | Number of structures to generate |
 | `--config` | `config.json` | Path to the configuration file |
 | `--output_dir` | `data` | Root output directory |
+| `--output_name` | `pyg_line_graphs.pkl` | Filename for the saved PyG dataset |
 | `--visualize` | off | Save a deflection plot for each structure |
 | `--skip_fea` | off | Skip FEA (no labels — cannot train) |
 | `--no_save_graphs` | off | Skip saving raw/simplified NetworkX graphs |
+| `--hf_repo` | `ehsan94/fea-gnn-surrogate` | Hugging Face dataset repo to upload to (reads `HF_TOKEN`); pass `""` to skip |
 
 ### train_surrogate.py
 
@@ -183,7 +201,7 @@ Each section has these fields:
 | `--mode` | `train` | Config section for training data |
 | `--edge_strategy` | `with_vn` | `with_vn`, `hop_edges`, or `no_vn` |
 | `--test_sets` | none | Test sets to evaluate after training (e.g. `test_1 test_2`) |
-| `--data_dir` | `data` | Root data directory |
+| `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--epochs` | `100` | Training epochs |
 | `--batch_size` | `32` | Mini-batch size |
 | `--hidden_dim` | `18` | Hidden dimension |
@@ -192,15 +210,16 @@ Each section has these fields:
 | `--test_size` | `0.3` | Validation split ratio |
 | `--save_path` | `best_model_<edge_strategy>.pth` | Model checkpoint path |
 | `--log_dir` | `./logs/` | TensorBoard log directory |
+| `--hf_repo` | `ehsan94/fea-gnn-surrogate` | Hugging Face model repo to upload trained model to (reads `HF_TOKEN`) |
 
 ### evaluate_model.py
 
 | Argument | Default | Description |
 |---|---|---|
-| `--model_path` | (required) | Path to trained model checkpoint |
+| `--model_path` | (required) | Path to trained model checkpoint; accepts `hf://owner/repo/file.pth` |
 | `--test_sets` | (required) | Test set names (e.g. `test_1 test_2`) |
 | `--edge_strategy` | `with_vn` | Edge strategy variant |
-| `--data_dir` | `data` | Root data directory |
+| `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--hidden_dim` | `18` | Must match training |
 | `--mp_steps` | `3` | Must match training |
 | `--batch_size` | `32` | Batch size for evaluation |
@@ -295,8 +314,7 @@ A structure is considered valid only if **all** of its elements are valid.
 from fea_gnn_surrogate.generate import generate_samples
 from fea_gnn_surrogate.graph.graph_utils import GraphHandler
 from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_structures
-from fea_gnn_surrogate.surrogate.dataset import normalize_data
-import pickle
+from fea_gnn_surrogate.surrogate.dataset import load_dataset, normalize_data
 
 # Generate 100 training samples — returns (no-hop line graphs, hop-edge line graphs)
 line_graphs, line_graphs_hop = generate_samples(
@@ -317,11 +335,10 @@ GraphHandler.save_pyg_line_graphs(
     use_virtual_node=False,
 )
 
-# Load a test dataset and run inference
-with open("data/test_1/with_vn/dataset/pyg_line_graphs.pkl", "rb") as f:
-    test_data = pickle.load(f)
+# Load a test dataset and run inference (local path or hf:// URI both work)
+test_data = load_dataset("hf://ehsan94/fea-gnn-surrogate/test_1/with_vn/dataset/pyg_line_graphs.pkl")
 
-model, norm_stats = load_model("best_model_with_vn.pth", num_features=13)
+model, norm_stats = load_model("hf://ehsan94/fea-gnn-surrogate/best_model_with_vn.pth", num_features=13)
 if norm_stats:
     normalize_data(test_data, norm_stats)
 
