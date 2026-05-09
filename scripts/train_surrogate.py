@@ -43,9 +43,9 @@ def main():
                         help="Model save path (default: best_model_<edge_strategy>.pth)")
     parser.add_argument("--log_dir", type=str, default="./logs/", help="Tensorboard log directory")
     parser.add_argument("--test_size", type=float, default=0.3, help="Validation split ratio")
-    parser.add_argument("--hf_repo", type=str, default="ehsan94/fea-gnn-surrogate",
-                        help="Hugging Face model repo to upload trained model to "
-                             "(default: ehsan94/fea-gnn-surrogate). Reads HF_TOKEN from environment.")
+    parser.add_argument("--hf_repo", type=str, default=None,
+                        help="Hugging Face model repo to upload trained model to. "
+                             "If not set, no upload is performed. Reads HF_TOKEN from environment.")
     args = parser.parse_args()
 
     if args.save_path is None:

@@ -48,9 +48,9 @@ examples:
     parser.add_argument("--no_save_graphs", action="store_true",
                         help="Do not save raw and simplified NetworkX graphs to disk "
                              "(they are saved by default for visualization in Stage 3)")
-    parser.add_argument("--hf_repo", type=str, default="ehsan94/fea-gnn-surrogate",
-                        help="Hugging Face dataset repo to upload datasets to "
-                             "(default: ehsan94/fea-gnn-surrogate). Reads HF_TOKEN from environment.")
+    parser.add_argument("--hf_repo", type=str, default=None,
+                        help="Hugging Face dataset repo to upload datasets to. "
+                             "If not set, no upload is performed. Reads HF_TOKEN from environment.")
     args = parser.parse_args()
 
     save_graphs = not args.no_save_graphs
