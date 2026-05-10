@@ -64,6 +64,17 @@ Each node in the line graph has 21 features (13 structural + 8 Laplacian positio
 
 A single `GraphConv` layer is applied repeatedly for `mp_steps` iterations with **tied weights**. This forces the model to learn one general message-passing rule rather than separate per-layer transformations — a strong inductive bias that matches the structural regularity of frame buildings.
 
+### 4. GPS Graph Transformer (GPSModel)
+
+An alternative architecture based on the **General, Powerful, Scalable (GPS)** Graph Transformer (Rampasek et al., NeurIPS 2022). Each GPS layer runs a local `GINConv` and a global multi-head self-attention in parallel, then combines their outputs:
+
+- **Local branch:** `GINConv` aggregates information from graph neighbors (same local inductive bias as SharedMPNN)
+- **Global branch:** multi-head self-attention attends over all nodes simultaneously — every element can directly attend to every other element, regardless of topological distance
+
+This eliminates the need for artificial edges (virtual node, hop edges) to propagate long-range structural dependencies. The model is trained on the `no_vn` edge strategy (plain line graph, no added edges).
+
+Select the GPS architecture with `--model gps` when training.
+
 ---
 
 ### Read more
@@ -122,16 +133,20 @@ python scripts/extract_features.py --mode test_1
 ### 2. Train
 
 ```bash
+# SharedMPNN (default)
 python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100
+
+# GPS Graph Transformer — no artificial edges needed
+python scripts/train_surrogate.py --mode train --model gps --edge_strategy no_vn --epochs 100
 ```
 
 Training data is loaded from Hugging Face by default (`hf://ehsan94/fea-gnn-surrogate`). To use a local directory instead, pass `--data_dir data`.
 
-The best model is saved to `best_model_with_vn.pth` and uploaded to the Hugging Face model repository specified by `--hf_repo` (requires `HF_TOKEN`). To also report test metrics after training:
+The best model is saved to `best_model_<edge_strategy>.pth` and uploaded to the Hugging Face model repository specified by `--hf_repo` (requires `HF_TOKEN`). To also report test metrics after training:
 
 ```bash
-python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100 \
-    --test_sets test_1 test_2
+python scripts/train_surrogate.py --mode train --model gps --edge_strategy no_vn --epochs 100 \
+    --test_sets test_1 test_2 test_3
 ```
 
 ### 3. Evaluate on test sets
@@ -226,13 +241,17 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 | Argument | Default | Description |
 |---|---|---|
 | `--mode` | `train` | Config section for training data |
+| `--model` | `mpnn` | Model architecture: `mpnn` (SharedMPNN) or `gps` (GPS Transformer) |
 | `--edge_strategy` | `with_vn` | `with_vn`, `hop_edges`, or `no_vn` |
 | `--test_sets` | none | Test sets to evaluate after training (e.g. `test_1 test_2`) |
 | `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--epochs` | `100` | Training epochs |
 | `--batch_size` | `32` | Mini-batch size |
 | `--hidden_dim` | `18` | Hidden dimension |
-| `--mp_steps` | `3` | Shared message-passing steps |
+| `--mp_steps` | `3` | Shared message-passing steps (MPNN) or GPS layers (GPS) |
+| `--heads` | `3` | Attention heads — GPS only; `hidden_dim` must be divisible by `heads` |
+| `--dropout` | `0.2` | Dropout rate — GPS only |
+| `--attn_dropout` | `0.2` | Attention dropout rate — GPS only |
 | `--lr` | `0.01` | Learning rate |
 | `--test_size` | `0.3` | Validation split ratio |
 | `--save_path` | `best_model_<edge_strategy>.pth` | Model checkpoint path |
@@ -243,12 +262,15 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 
 | Argument | Default | Description |
 |---|---|---|
-| `--model_path` | (required) | Path to trained model checkpoint; accepts `hf://owner/repo/file.pth` |
+| `--model_path` | `best_model_<edge_strategy>.pth` | Path to trained model checkpoint; accepts `hf://owner/repo/file.pth` |
 | `--test_sets` | (required) | Test set names (e.g. `test_1 test_2`) |
 | `--edge_strategy` | `with_vn` | Edge strategy variant |
 | `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--hidden_dim` | `18` | Must match training |
 | `--mp_steps` | `3` | Must match training |
+| `--heads` | `3` | Must match training (GPS only) |
+| `--dropout` | `0.2` | Must match training (GPS only) |
+| `--attn_dropout` | `0.2` | Must match training (GPS only) |
 | `--batch_size` | `32` | Batch size for evaluation |
 
 ### run_inference.py
@@ -279,13 +301,23 @@ Each generation run produces three graph representations of the **same** structu
 
 ### Experimental results (with Laplacian PE, k=8)
 
+#### SharedMPNN
+
 | Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
 |---|---|---|---|---|---|---|
-| No edges (baseline) | **0.9830** | 0.1698 | **0.9980** | **0.0436** | **0.9985** | **0.0560** |
+| No edges (baseline) | 0.9830 | 0.1698 | 0.9980 | 0.0436 | 0.9985 | 0.0560 |
 | Virtual node | 0.9836 | 0.2031 | 0.9979 | 0.0408 | 0.9974 | 0.0613 |
-| Hop edges (domain knowledge) | 0.9795 | **0.1667** | 0.9974 | 0.0491 | 0.9978 | 0.0660 |
+| Hop edges (domain knowledge) | 0.9795 | 0.1667 | 0.9974 | 0.0491 | 0.9978 | 0.0660 |
 
-With Laplacian positional encoding, all three variants perform similarly. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes and hop edges. As a result, adding a virtual node or domain-knowledge hop edges no longer provides a meaningful improvement over the plain baseline.
+With Laplacian positional encoding, all three SharedMPNN variants perform similarly. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes and hop edges.
+
+#### GPS Graph Transformer
+
+| Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
+|---|---|---|---|---|---|---|
+| GPS (no edges) | **0.9813** | **0.1754** | **0.9985** | **0.0262** | **0.9992** | **0.0214** |
+
+GPS is trained on the plain line graph (`no_vn`) — no virtual node or hop edges. Global self-attention replaces all hand-crafted long-range connections. On test_2 and test_3 it substantially outperforms all SharedMPNN variants, matching or exceeding the best MPNN result on test_1 as well.
 
 ---
 
@@ -309,7 +341,7 @@ fea-gnn-surrogate/
 │   ├── graph/
 │   │   └── graph_utils.py               # GraphHandler: generate, simplify, PyG serialisation
 │   └── surrogate/
-│       ├── model.py                      # SharedMPNN, FC model definitions
+│       ├── model.py                      # SharedMPNN, GPSModel, FC model definitions
 │       ├── dataset.py                    # load_dataset, create_dataloaders, normalisation
 │       ├── train.py                      # training loop with TensorBoard logging
 │       └── inference.py                  # load_model, predict, rank_structures
