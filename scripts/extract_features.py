@@ -27,13 +27,11 @@ def main():
 
     base_dir = os.path.join(args.data_dir, args.mode, "base")
     line_graphs = GraphHandler.load_base_line_graphs(os.path.join(base_dir, "line_graphs.pkl"))
-    line_graphs_hop = GraphHandler.load_base_line_graphs(os.path.join(base_dir, "line_graphs_hop.pkl"))
     print(f"Loaded {len(line_graphs)} base line graphs from {base_dir}/")
 
     has_label = not args.skip_fea
 
     variants = [
-        ("hop_edges", line_graphs_hop, False),
         ("with_vn", line_graphs, True),
         ("no_vn", line_graphs, False),
     ]

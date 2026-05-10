@@ -9,7 +9,7 @@ from fea_gnn_surrogate.surrogate.dataset import load_dataset, normalize_data
 from fea_gnn_surrogate.surrogate.train import validate
 
 
-EDGE_STRATEGIES = ["with_vn", "hop_edges", "no_vn"]
+EDGE_STRATEGIES = ["with_vn", "no_vn"]
 
 
 def _dataset_path(data_dir, test_set, edge_strategy):

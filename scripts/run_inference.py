@@ -10,7 +10,7 @@ from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_stru
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
 
 
-EDGE_STRATEGIES = ["with_vn", "hop_edges", "no_vn"]
+EDGE_STRATEGIES = ["with_vn", "no_vn"]
 
 
 def main():

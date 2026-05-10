@@ -105,12 +105,9 @@ class GraphHandler:
         self.set_step_size(G)
         return G
 
-    def simplify_graph(self, G, use_hop_edges=False):
+    def simplify_graph(self, G):
         Gs = self.unify_edges(G.copy())
-        if use_hop_edges:
-            self.add_hop_edges(Gs)
-        else:
-            self.set_real_flag(Gs)
+        self.set_real_flag(Gs)
         self.set_rotation(Gs)
         self.set_column_flag(Gs)
         self.set_distance(Gs)
@@ -229,19 +226,6 @@ class GraphHandler:
     def set_real_flag(self, G):
         for edge in G.edges():
             G[edge[0]][edge[1]]["real"] = True
-
-    def add_hop_edges(self, G):
-        for edge in G.edges():
-            if "real" not in G[edge[0]][edge[1]]:
-                G[edge[0]][edge[1]]["real"] = True
-
-        for node_i in G.nodes():
-            x1, y1 = G.nodes[node_i]["coo"]
-            if y1 == self.transfer_row:
-                for node_j in G.nodes():
-                    x2, y2 = G.nodes[node_j]["coo"]
-                    if y2 > self.transfer_row and x1 == x2 and G.degree(node_j) > 2:
-                        G.add_edge(node_i, node_j, real=False)
 
     def set_foundation_flag(self, G):
         for u, v in G.edges():
