@@ -73,13 +73,9 @@ The core assumption is that **elements connected by a few steps are more likely 
 
 Using GNNs, we fit the same function on each node (element in the line graph) to predict its stability, but allow each node to incorporate aggregated information from its close neighbors via message passing.
 
-### The `real` attribute: artificial edges for load path communication
+### The `real` attribute
 
-The assumptions behind message passing do not always hold in frame structures. Elements in the same **load path** can be closely related even when they are topologically far apart. For example, a ground-floor column and a roof beam may be in the same load path but separated by many hops.
-
-To address this, **artificial edges** are added between nodes that are far from each other in the graph but closely related through shared load paths. These edges are marked with `real=False` to distinguish them from physical connections. The artificial edges allow the GNN to pass messages between structurally related elements that would otherwise be out of reach within the limited number of message passing steps.
-
-This approach is effective for the specific family of structures in this project (grid-layout frames with known geometry patterns), where load paths can be manually identified.
+The `real` attribute distinguishes physical structural elements from non-physical graph nodes. When a **virtual node** is used (the `with_vn` edge strategy), it is marked with `real=False` so the model can distinguish it from real elements. All physical edges have `real=True`.
 
 ---
 
@@ -111,7 +107,7 @@ Reusing the same convolution layer across multiple message passing steps is a we
 
 With only 100 training samples, a model with separate parameters per layer would overfit immediately. Sharing weights across message passing steps is a form of **regularization** that also increases the effective **receptive field** — each step propagates information one hop further, so 3 steps gives each node access to its 3-hop neighborhood.
 
-For a 14-story structure, 3 hops on the line graph covers a reasonable local neighborhood. However, this is only sufficient for capturing long-range dependencies **because of the artificial edges**. Without them, 3 hops on a line graph of a 14-story building would not reach from foundation to upper floors.
+For a 14-story structure, 3 hops on the line graph covers a reasonable local neighborhood. To capture longer-range dependencies, the model relies on either the **virtual node** (which puts every element within 2 hops of every other) or **Laplacian positional encodings** (which encode each element's position in the global graph topology).
 
 ### Comparison: SharedMPNN vs. fully connected baseline
 
@@ -119,68 +115,44 @@ The notebook also includes a simple `FC` (fully connected) baseline that ignores
 
 ---
 
-## Assessment of the Artificial Edges (the `real` Feature)
+## Why Not Domain-Knowledge Edges?
 
-The use of artificial edges to encode load paths is a **pragmatic engineering decision** that works well for this specific tutorial, but has significant limitations:
+An earlier version of this project included **hop edges** — hand-crafted artificial edges connecting transfer-row nodes to upper-floor column nodes to encode load path relationships. These were removed for three reasons:
 
-### Strengths
+1. **No performance benefit:** With Laplacian positional encoding, hop edges performed no better (and slightly worse) than the plain line graph or the virtual node approach.
+2. **Not generalizable:** For arbitrary geometries, load paths cannot be manually identified. In a general surrogate model, this knowledge should be learned, not hand-crafted.
+3. **Dataset expansion requires expert input:** Adding new structure families would require an expert to redesign the hop edge logic each time, making the approach impractical to scale.
 
-- Enables a tiny model (700 parameters) to handle structures with up to 14 levels
-- Explicitly encodes domain knowledge about structural load paths
-- Dramatically improves message passing reach without increasing model depth
-
-### Limitations
-
-- **Not generalizable:** For arbitrary geometries, load paths cannot be manually identified. In a general surrogate model, this knowledge should be learned, not hand-crafted.
-- **Encodes the answer into the input:** Adding artificial edges tells the model which distant elements interact closely — this is arguably the hardest part of the prediction problem. The model doesn't learn *what* interacts with what; it is told explicitly.
-- **Not novel in the broader ML context:** Adding domain-informed edges is common in scientific ML. For example, molecular dynamics simulations add non-bonded interaction edges, and MeshGraphNets (Pfaff et al., 2021) use multi-scale mesh connections. The specific application to structural load paths is valuable but the technique itself is well-known.
+The virtual node and GPS Graph Transformer both provide long-range communication without any domain-specific edge engineering.
 
 ---
 
-## Alternatives: Learning Long-Range Dependencies Without Artificial Edges
+## Approaches for Long-Range Dependencies
 
-The core question is: **can the model learn which distant elements interact, rather than being told?** Several architectures address this directly.
+Frame structures require long-range communication: elements far apart in the graph can be closely related through shared load paths. This project implements three approaches, each avoiding hand-crafted domain edges:
 
 ### 1. Virtual Node (simplest)
 
-Add a single virtual node connected to all real nodes. This gives every node a 2-hop path to every other node. It is a one-line change in PyG and works well with small datasets. No domain knowledge is needed.
+Add a single virtual node connected to all real nodes. This gives every node a 2-hop path to every other node. It is a one-line change in PyG and works well with small datasets. No domain knowledge is needed. Used via `--edge_strategy with_vn`.
 
-### 2. Multi-Scale Pooling
+### 2. Laplacian Positional Encodings
 
-Use hierarchical pooling (e.g., by floor level) to create coarsened graphs where distant elements become neighbors. This naturally captures load paths across floors without manual edge engineering.
+Instead of altering the graph topology, encode structural properties as additional node features. Laplacian eigenvectors capture global graph structure and relative node positions, telling the model about each element's position within the load-path topology. This is always included as part of the feature set (k=8 spectral coordinates).
 
-### 3. Graph Transformers
+### 3. GPS Graph Transformer
 
-Graph Transformers use **self-attention** as an all-to-all message passing mechanism. Every node can attend to every other node, so the model can learn which distant nodes matter.
-
-Relevant architectures:
-
-- **Graphormer** (Ying et al., NeurIPS 2021): Adds spatial/structural encodings to a standard transformer. Achieved state-of-the-art on molecular property prediction, which is structurally analogous to this problem.
-- **GPS (General Powerful Scalable Graph Transformer)** (Rampasek et al., 2022): Combines local MPNN layers with global transformer attention, getting the best of both worlds.
-
-A transformer-based approach would be the most expressive replacement for the artificial edges, but requires significantly more training data (the $O(N^2)$ attention mechanism has more parameters to fit).
-
-### 4. Physics-Informed Positional Encodings
-
-Instead of altering the graph topology, encode structural properties as additional node features:
-
-- **Laplacian eigenvectors:** Capture global graph structure and relative node positions.
-- **Random walk probabilities:** Encode how likely a random walk from one node is to reach another, providing a soft measure of structural proximity.
-
-This tells the model about global graph structure without adding artificial edges.
+Graph Transformers use **self-attention** as an all-to-all message passing mechanism. Every node can attend to every other node, so the model can learn which distant nodes matter. The GPS architecture (Rampasek et al., 2022) combines local GINConv layers with global transformer attention, getting the best of both worlds. Used via `--model gps --edge_strategy no_vn`.
 
 ### Comparison Summary
 
 | Approach | Pros | Cons |
 |---|---|---|
-| Current (MPNN + artificial edges) | Tiny model, works with 100 samples | Not generalizable, requires domain expertise |
-| Virtual node | Simple, no domain knowledge needed | Less expressive than attention |
-| Multi-scale pooling | Naturally captures floor-level structure | Requires pooling strategy design |
-| Graph Transformer | Learns long-range interactions, generalizable | Needs more data, more parameters |
-| Positional encodings | Preserves original topology, principled | May not fully replace explicit load path information |
+| SharedMPNN + virtual node | Tiny model, works with 100 samples | Less expressive than attention |
+| SharedMPNN + no edges | Simplest graph, no artificial nodes | Relies entirely on positional encodings for long-range |
+| GPS Graph Transformer | Learns long-range interactions, best performance | More parameters |
 
 ---
 
 ## Summary
 
-The SharedMPNN architecture is a sound choice for this constrained problem: weight sharing prevents overfitting on a small dataset, and repeated message passing extends the receptive field. The artificial edges are an effective workaround for the limited reach of local message passing, but they encode domain knowledge that ideally should be learned. For a more general surrogate model that handles diverse frame geometries, graph transformers or virtual node approaches offer a path toward learning long-range structural dependencies from data alone.
+The SharedMPNN architecture is a sound choice for this constrained problem: weight sharing prevents overfitting on a small dataset, and repeated message passing extends the receptive field. Long-range dependencies are handled through the virtual node, Laplacian positional encodings, or the GPS Graph Transformer — all of which avoid hand-crafted domain edges and generalize to new structure families without expert redesign.

@@ -13,9 +13,7 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
                      save_graphs=False, output_dir="data"):
     """Generate structural samples and run FEA.
 
-    Returns (line_graphs, line_graphs_hop):
-      - line_graphs: line graphs without hop edges (for with_vn and no_vn variants)
-      - line_graphs_hop: line graphs with domain-knowledge hop edges
+    Returns a list of NetworkX line graphs (one per structure).
     """
     conf = load_config(config_path, mode)
     env = StructEnvironment()
@@ -23,22 +21,19 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
 
     episode = 0
     line_graphs = []
-    line_graphs_hop = []
 
     while episode < num_episodes:
         if mode == "train":
             graph_handler.num_rows = conf["num_rows"] + np.random.randint(low=-3, high=3)
 
         G = graph_handler.generate_graph(mode=mode)
-        Gs = graph_handler.simplify_graph(G, use_hop_edges=False)
-        Gs_hop = graph_handler.simplify_graph(G, use_hop_edges=True)
+        Gs = graph_handler.simplify_graph(G)
 
         row_noise = np.random.beta(4, 4, size=(3, 2))
         column_noise = np.random.beta(4, 4, size=(2, 2))
 
         G = graph_handler.modify_edge_size(G, row_noise, column_noise, col_compressible=True)
         Gs = graph_handler.modify_edge_size(Gs, row_noise, column_noise, col_compressible=True)
-        Gs_hop = graph_handler.modify_edge_size(Gs_hop, row_noise, column_noise, col_compressible=True)
 
         (
             node_positions,
@@ -75,25 +70,14 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
             Gs = graph_handler.calc_ver_deflection(Gs)
             Gs = graph_handler.calc_drift(G, Gs, UG)
 
-            Gs_hop = graph_handler.agg_deflection(G, Gs_hop, deflections)
-            Gs_hop = graph_handler.set_d_theta(Gs_hop, UG)
-            Gs_hop = graph_handler.calc_ver_deflection(Gs_hop)
-            Gs_hop = graph_handler.calc_drift(G, Gs_hop, UG)
-
         L = nx.line_graph(Gs)
         L.add_nodes_from((node, Gs.edges[node]) for node in L)
         L = GraphHandler.node_tuple_2_index(L)
 
-        L_hop = nx.line_graph(Gs_hop)
-        L_hop.add_nodes_from((node, Gs_hop.edges[node]) for node in L_hop)
-        L_hop = GraphHandler.node_tuple_2_index(L_hop)
-
         G.graph["name"] = str(episode)
         Gs.graph["name"] = str(episode)
         L.graph["name"] = str(episode)
-        L_hop.graph["name"] = str(episode)
         line_graphs.append(L)
-        line_graphs_hop.append(L_hop)
 
         if save_graphs:
             graph_handler.save_graph(G, os.path.join(output_dir, mode, "raw", "graphs"))
@@ -106,4 +90,4 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
         print(f"step: {episode}")
         episode += 1
 
-    return line_graphs, line_graphs_hop
+    return line_graphs

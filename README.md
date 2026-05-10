@@ -71,7 +71,7 @@ An alternative architecture based on the **General, Powerful, Scalable (GPS)** G
 - **Local branch:** `GINConv` aggregates information from graph neighbors (same local inductive bias as SharedMPNN)
 - **Global branch:** multi-head self-attention attends over all nodes simultaneously — every element can directly attend to every other element, regardless of topological distance
 
-This eliminates the need for artificial edges (virtual node, hop edges) to propagate long-range structural dependencies. The model is trained on the `no_vn` edge strategy (plain line graph, no added edges).
+This eliminates the need for artificial edges (e.g. virtual node) to propagate long-range structural dependencies. The model is trained on the `no_vn` edge strategy (plain line graph, no added edges).
 
 Select the GPS architecture with `--model gps` when training.
 
@@ -119,7 +119,7 @@ python scripts/generate_dataset.py --mode test_2 --num_samples 500
 
 Each run:
 - Generates structures, runs FEA, and saves raw NetworkX line graphs to `data/{mode}/base/` (the **base dataset** — topology + attributes, no feature extraction)
-- Extracts PyG features and saves three edge-strategy variants (`with_vn`, `hop_edges`, `no_vn`) from the same structures
+- Extracts PyG features and saves two edge-strategy variants (`with_vn`, `no_vn`) from the same structures
 
 By default the generated `.pkl` files are uploaded to the `ehsan94/fea-gnn-surrogate` Hugging Face dataset repository (requires `HF_TOKEN`). Pass `--hf_repo ""` to skip the upload.
 
@@ -242,7 +242,7 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 |---|---|---|
 | `--mode` | `train` | Config section for training data |
 | `--model` | `mpnn` | Model architecture: `mpnn` (SharedMPNN) or `gps` (GPS Transformer) |
-| `--edge_strategy` | `with_vn` | `with_vn`, `hop_edges`, or `no_vn` |
+| `--edge_strategy` | `with_vn` | `with_vn` or `no_vn` |
 | `--test_sets` | none | Test sets to evaluate after training (e.g. `test_1 test_2`) |
 | `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--epochs` | `100` | Training epochs |
@@ -291,12 +291,11 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 
 ## Edge Strategy Comparison
 
-Each generation run produces three graph representations of the **same** structures:
+Each generation run produces two graph representations of the **same** structures:
 
 | Variant | Description |
 |---|---|
 | **`with_vn`** | Global shared virtual node connected to all elements — every element is exactly 2 hops from every other |
-| **`hop_edges`** | Domain-knowledge artificial edges connecting transfer-row nodes to upper-floor column nodes |
 | **`no_vn`** | No artificial edges; pure local message passing (baseline) |
 
 ### Experimental results (with Laplacian PE, k=8)
@@ -307,9 +306,8 @@ Each generation run produces three graph representations of the **same** structu
 |---|---|---|---|---|---|---|
 | No edges (baseline) | 0.9830 | 0.1698 | 0.9980 | 0.0436 | 0.9985 | 0.0560 |
 | Virtual node | 0.9836 | 0.2031 | 0.9979 | 0.0408 | 0.9974 | 0.0613 |
-| Hop edges (domain knowledge) | 0.9795 | 0.1667 | 0.9974 | 0.0491 | 0.9978 | 0.0660 |
 
-With Laplacian positional encoding, all three SharedMPNN variants perform similarly. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes and hop edges.
+With Laplacian positional encoding, both SharedMPNN variants perform similarly. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes.
 
 #### GPS Graph Transformer
 
@@ -317,7 +315,7 @@ With Laplacian positional encoding, all three SharedMPNN variants perform simila
 |---|---|---|---|---|---|---|
 | GPS (no edges) | **0.9813** | **0.1754** | **0.9985** | **0.0262** | **0.9992** | **0.0214** |
 
-GPS is trained on the plain line graph (`no_vn`) — no virtual node or hop edges. Global self-attention replaces all hand-crafted long-range connections. On test_2 and test_3 it substantially outperforms all SharedMPNN variants, matching or exceeding the best MPNN result on test_1 as well.
+GPS is trained on the plain line graph (`no_vn`) — no virtual node needed. Global self-attention replaces all hand-crafted long-range connections. On test_2 and test_3 it substantially outperforms both SharedMPNN variants, matching or exceeding the best MPNN result on test_1 as well.
 
 ---
 
@@ -378,20 +376,15 @@ from fea_gnn_surrogate.graph.graph_utils import GraphHandler
 from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_structures
 from fea_gnn_surrogate.surrogate.dataset import load_dataset, normalize_data
 
-# Generate 100 training samples — returns (no-hop line graphs, hop-edge line graphs)
-line_graphs, line_graphs_hop = generate_samples(
+# Generate 100 training samples — returns a list of NetworkX line graphs
+line_graphs = generate_samples(
     config_path="config.json", mode="train", num_episodes=100
 )
 
 # Save base NX line graphs (topology + attributes) — re-use when features change
 GraphHandler.save_base_line_graphs(line_graphs, "data/train/base", "line_graphs.pkl")
-GraphHandler.save_base_line_graphs(line_graphs_hop, "data/train/base", "line_graphs_hop.pkl")
 
-# Extract PyG features and save all three edge-strategy variants
-GraphHandler.save_pyg_line_graphs(
-    line_graphs_hop, "data/train/hop_edges/dataset", "pyg_line_graphs.pkl",
-    use_virtual_node=False,
-)
+# Extract PyG features and save both edge-strategy variants
 GraphHandler.save_pyg_line_graphs(
     line_graphs, "data/train/with_vn/dataset", "pyg_line_graphs.pkl",
     use_virtual_node=True,

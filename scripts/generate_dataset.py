@@ -21,7 +21,7 @@ def _upload_to_hf(local_file, path_in_repo, repo_id):
 def main():
     parser = argparse.ArgumentParser(
         description="Generate random frame structures, run FEA to label elements, "
-                    "and save as PyG graphs for all three edge-strategy variants.",
+                    "and save as PyG graphs for both edge-strategy variants.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
@@ -55,7 +55,7 @@ examples:
 
     save_graphs = not args.no_save_graphs
 
-    line_graphs, line_graphs_hop = generate_samples(
+    line_graphs = generate_samples(
         config_path=args.config,
         mode=args.mode,
         num_episodes=args.num_samples,
@@ -71,11 +71,9 @@ examples:
     # Re-run only extract_features.py when changing features — no need to redo FEA.
     base_dir = os.path.join(args.output_dir, args.mode, "base")
     GraphHandler.save_base_line_graphs(line_graphs, base_dir, "line_graphs.pkl")
-    GraphHandler.save_base_line_graphs(line_graphs_hop, base_dir, "line_graphs_hop.pkl")
     print(f"Saved base line graphs to {base_dir}/")
 
     variants = [
-        ("hop_edges", line_graphs_hop, False),
         ("with_vn", line_graphs, True),
         ("no_vn", line_graphs, False),
     ]
