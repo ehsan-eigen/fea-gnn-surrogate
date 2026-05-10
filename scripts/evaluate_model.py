@@ -22,11 +22,9 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  python scripts/evaluate_model.py --model_path best_model_vn.pth --test_sets test_1 test_2
+  python scripts/evaluate_model.py --edge_strategy with_vn --test_sets test_1 test_2
 """,
     )
-    parser.add_argument("--model_path", type=str, required=True,
-                        help="Path to trained model checkpoint (.pth)")
     parser.add_argument("--test_sets", type=str, nargs="+", required=True,
                         help="One or more test set names (e.g. test_1 test_2)")
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
@@ -42,20 +40,22 @@ examples:
                         help="Batch size for evaluation (default: 32)")
     args = parser.parse_args()
 
+    model_path = f"best_model_{args.edge_strategy}.pth"
+
     # Load the first test set to infer num_features
     first_path = _dataset_path(args.data_dir, args.test_sets[0], args.edge_strategy)
     first_data = load_dataset(first_path)
     num_features = first_data[0].x.shape[1]
 
     model, norm_stats = load_model(
-        args.model_path, num_features,
+        model_path, num_features,
         hidden_dim=args.hidden_dim, num_mp_steps=args.mp_steps,
     )
 
     # pos_weight=1 during eval so loss is unweighted BCE (comparable across datasets)
     criterion = torch.nn.BCEWithLogitsLoss()
 
-    print(f"Model:  {args.model_path}")
+    print(f"Model:  {model_path}")
     print(f"{'Test Set':<20}  {'Loss':>8}  {'AUC':>8}")
     print("-" * 40)
 
