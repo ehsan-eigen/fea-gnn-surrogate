@@ -27,6 +27,8 @@ examples:
     )
     parser.add_argument("--test_sets", type=str, nargs="+", required=True,
                         help="One or more test set names (e.g. test_1 test_2)")
+    parser.add_argument("--model_path", type=str, default=None,
+                        help="Path to model checkpoint (default: best_model_<edge_strategy>.pth)")
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")
@@ -35,12 +37,18 @@ examples:
     parser.add_argument("--hidden_dim", type=int, default=18,
                         help="Hidden dimension, must match training (default: 18)")
     parser.add_argument("--mp_steps", type=int, default=3,
-                        help="Message passing steps, must match training (default: 3)")
+                        help="Message passing steps / GPS layers, must match training (default: 3)")
+    parser.add_argument("--heads", type=int, default=3,
+                        help="Attention heads (GPS only, default: 3)")
+    parser.add_argument("--dropout", type=float, default=0.2,
+                        help="Dropout (GPS only, default: 0.2)")
+    parser.add_argument("--attn_dropout", type=float, default=0.2,
+                        help="Attention dropout (GPS only, default: 0.2)")
     parser.add_argument("--batch_size", type=int, default=32,
                         help="Batch size for evaluation (default: 32)")
     args = parser.parse_args()
 
-    model_path = f"best_model_{args.edge_strategy}.pth"
+    model_path = args.model_path or f"best_model_{args.edge_strategy}.pth"
 
     # Load the first test set to infer num_features
     first_path = _dataset_path(args.data_dir, args.test_sets[0], args.edge_strategy)
@@ -50,6 +58,7 @@ examples:
     model, norm_stats = load_model(
         model_path, num_features,
         hidden_dim=args.hidden_dim, num_mp_steps=args.mp_steps,
+        heads=args.heads, dropout=args.dropout, attn_dropout=args.attn_dropout,
     )
 
     # pos_weight=1 during eval so loss is unweighted BCE (comparable across datasets)

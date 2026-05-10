@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pickle
 
-from fea_gnn_surrogate.surrogate.model import SharedMPNN
+from fea_gnn_surrogate.surrogate.model import SharedMPNN, GPSModel
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
 from fea_gnn_surrogate.graph.graph_utils import FEATURE_NAMES
 
@@ -37,14 +37,35 @@ def _resolve_model_path(model_path):
     return local_path
 
 
-def load_model(model_path, num_features, hidden_dim=18, output_dim=1, num_mp_steps=3):
+def _build_model(model_type, num_features, hidden_dim, output_dim, num_layers,
+                 heads=3, dropout=0.2, attn_dropout=0.2):
+    """Instantiate a model by type name."""
+    if model_type == "gps":
+        return GPSModel(num_features, hidden_dim, output_dim, num_layers,
+                        heads=heads, dropout=dropout, attn_dropout=attn_dropout)
+    else:
+        return SharedMPNN(num_features, hidden_dim, output_dim, num_layers)
+
+
+def load_model(model_path, num_features, hidden_dim=18, output_dim=1,
+               num_mp_steps=3, model_type="mpnn", heads=3,
+               dropout=0.2, attn_dropout=0.2):
     """Load a trained model and normalization stats from a checkpoint.
 
     model_path can be a local path or hf://owner/repo-name/filename.pth.
     """
     checkpoint = torch.load(_resolve_model_path(model_path), weights_only=False)
 
-    model = SharedMPNN(num_features, hidden_dim, output_dim, num_mp_steps)
+    # Detect model type from checkpoint if saved there
+    saved_type = None
+    if "model_state_dict" in checkpoint:
+        saved_type = checkpoint.get("model_type")
+    if saved_type is not None:
+        model_type = saved_type
+
+    model = _build_model(model_type, num_features, hidden_dim, output_dim,
+                         num_mp_steps, heads=heads, dropout=dropout,
+                         attn_dropout=attn_dropout)
 
     if "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])

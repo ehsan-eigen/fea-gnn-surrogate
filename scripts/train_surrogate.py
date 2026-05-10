@@ -4,7 +4,8 @@ import os
 import torch
 from torch_geometric.loader import DataLoader
 
-from fea_gnn_surrogate.surrogate.model import SharedMPNN
+from fea_gnn_surrogate.surrogate.model import SharedMPNN, GPSModel
+from fea_gnn_surrogate.surrogate.inference import _build_model
 from fea_gnn_surrogate.surrogate.dataset import (
     load_dataset,
     create_dataloaders,
@@ -26,6 +27,8 @@ def main():
     parser = argparse.ArgumentParser(description="Train GNN surrogate model")
     parser.add_argument("--mode", type=str, default="train",
                         help="Config section for training data (default: train)")
+    parser.add_argument("--model", type=str, default="mpnn", choices=["mpnn", "gps"],
+                        help="Model architecture: mpnn (SharedMPNN) or gps (GPS Transformer) (default: mpnn)")
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")
@@ -37,8 +40,16 @@ def main():
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--hidden_dim", type=int, default=18, help="Hidden dimension")
-    parser.add_argument("--mp_steps", type=int, default=3, help="Message passing steps")
+    parser.add_argument("--mp_steps", type=int, default=3,
+                        help="Message passing steps (MPNN) or GPS layers (GPS)")
     parser.add_argument("--lr", type=float, default=0.01, help="Learning rate")
+    parser.add_argument("--heads", type=int, default=3,
+                        help="Number of attention heads (GPS only, default: 3). "
+                             "hidden_dim must be divisible by heads.")
+    parser.add_argument("--dropout", type=float, default=0.2,
+                        help="Dropout rate (GPS only, default: 0.2)")
+    parser.add_argument("--attn_dropout", type=float, default=0.2,
+                        help="Attention dropout rate (GPS only, default: 0.2)")
     parser.add_argument("--save_path", type=str, default=None,
                         help="Model save path (default: best_model_<edge_strategy>.pth)")
     parser.add_argument("--log_dir", type=str, default="./logs/", help="Tensorboard log directory")
@@ -74,7 +85,11 @@ def main():
     num_features = data_list[0].x.shape[1]
     print(f"Number of features: {num_features}")
 
-    model = SharedMPNN(num_features, args.hidden_dim, 1, args.mp_steps)
+    model = _build_model(args.model, num_features, args.hidden_dim, 1,
+                         args.mp_steps, heads=args.heads,
+                         dropout=args.dropout, attn_dropout=args.attn_dropout)
+    print(f"Model: {args.model} — {sum(p.numel() for p in model.parameters())} parameters")
+
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
@@ -85,6 +100,7 @@ def main():
         log_dir=args.log_dir,
         norm_stats=norm_stats,
         hf_repo=args.hf_repo,
+        model_type=args.model,
     )
 
     # Evaluate on test sets if requested
@@ -93,6 +109,8 @@ def main():
         model, norm_stats = load_model(
             args.save_path, num_features,
             hidden_dim=args.hidden_dim, num_mp_steps=args.mp_steps,
+            model_type=args.model, heads=args.heads,
+            dropout=args.dropout, attn_dropout=args.attn_dropout,
         )
         eval_criterion = torch.nn.BCEWithLogitsLoss()
 
