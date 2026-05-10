@@ -70,6 +70,7 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
             Gs = graph_handler.calc_ver_deflection(Gs)
             Gs = graph_handler.calc_drift(G, Gs, UG)
 
+        graph_handler.set_load_decomposition(Gs)
         L = nx.line_graph(Gs)
         L.add_nodes_from((node, Gs.edges[node]) for node in L)
         L = GraphHandler.node_tuple_2_index(L)
