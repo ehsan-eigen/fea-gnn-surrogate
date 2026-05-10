@@ -277,13 +277,15 @@ Each generation run produces three graph representations of the **same** structu
 | **`hop_edges`** | Domain-knowledge artificial edges connecting transfer-row nodes to upper-floor column nodes |
 | **`no_vn`** | No artificial edges; pure local message passing (baseline) |
 
-### Experimental results (500 train / 200 test per set)
+### Experimental results (with Laplacian PE, k=8)
 
-| Variant | Best Val Loss | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss |
-|---|---|---|---|---|---|
-| Hop edges (domain knowledge) | 0.0310 | 0.9690 | 0.3353 | 0.9954 | 0.0842 |
-| Virtual node | **0.0393** | **0.9724** | **0.2265** | 0.9939 | **0.0717** |
-| No edges (baseline) | 0.0350 | 0.9720 | 0.2830 | **0.9967** | 0.0777 |
+| Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
+|---|---|---|---|---|---|---|
+| No edges (baseline) | **0.9830** | 0.1698 | **0.9980** | **0.0436** | **0.9985** | **0.0560** |
+| Virtual node | 0.9836 | 0.2031 | 0.9979 | 0.0408 | 0.9974 | 0.0613 |
+| Hop edges (domain knowledge) | 0.9795 | **0.1667** | 0.9974 | 0.0491 | 0.9978 | 0.0660 |
+
+With Laplacian positional encoding, all three variants perform similarly. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes and hop edges. As a result, adding a virtual node or domain-knowledge hop edges no longer provides a meaningful improvement over the plain baseline.
 
 ---
 
