@@ -5,6 +5,10 @@ import numpy as np
 from torch.utils.tensorboard import SummaryWriter
 from sklearn.metrics import roc_auc_score
 
+from fea_gnn_surrogate.graph.graph_utils import FEATURE_NAMES
+
+_REAL_IDX = FEATURE_NAMES.index("real")
+
 
 def train_one_epoch(model, dataloader, optimizer, criterion):
     model.train()
@@ -14,7 +18,7 @@ def train_one_epoch(model, dataloader, optimizer, criterion):
 
     for batch_data in dataloader:
         optimizer.zero_grad()
-        mask = batch_data.x[:, 4] == 1  # exclude virtual node (real=0)
+        mask = batch_data.x[:, _REAL_IDX] == 1
         pred = model(batch_data).view(-1)[mask]
         labels = batch_data.y.to(torch.float64)[mask]
         loss = criterion(pred.to(torch.float64), labels)
@@ -40,7 +44,7 @@ def validate(model, dataloader, criterion):
 
     with torch.no_grad():
         for batch_data in dataloader:
-            mask = batch_data.x[:, 4] == 1  # exclude virtual node (real=0)
+            mask = batch_data.x[:, _REAL_IDX] == 1
             pred = model(batch_data).view(-1)[mask]
             labels = batch_data.y.to(torch.float64)[mask]
             loss = criterion(pred.to(torch.float64), labels)

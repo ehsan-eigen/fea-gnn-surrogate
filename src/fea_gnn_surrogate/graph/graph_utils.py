@@ -10,6 +10,67 @@ from torch_geometric.data import Data
 import math
 
 
+LAPLACIAN_PE_DIM = 8
+
+# Feature names for the PyG node feature matrix (line graph: nodes = structural elements).
+# Binary/categorical features (not normalized):
+#   is_column, cant, foundation, transfer, real
+# Structural context features (already bounded, not normalized):
+#   level_ratio, col_position, level
+# Section properties (normalized per element type — vary with random sizing):
+#   I_col, A_col:  moment of inertia and area projected onto column axis (sin θ)
+#   I_beam, A_beam, span:  moment of inertia, area, and length projected onto beam axis (cos θ)
+# Spectral features (bounded in [-1, 1] from normalized Laplacian, not normalized):
+#   pe_0 .. pe_{k-1}
+FEATURE_NAMES = [
+    "is_column",    # binary: rotation > 0.01
+    "cant",         # binary: cantilever element
+    "foundation",   # binary: connected to support
+    "transfer",     # binary: on transfer level
+    "real",         # binary: 0 for virtual node
+    "level_ratio",  # vertical position relative to transfer level
+    "col_position", # col_l2r_ratio * sin(rotation)
+    "level",        # floor level
+    "I_col",        # D³·W·sin(θ) — column moment of inertia
+    "A_col",        # D·W·sin(θ) — column cross-section area
+    "I_beam",       # D³·W·cos(θ) — beam moment of inertia
+    "A_beam",       # D·W·cos(θ) — beam cross-section area
+    "span",         # dist·cos(θ) — beam span length
+] + [f"pe_{i}" for i in range(LAPLACIAN_PE_DIM)]
+
+# Which features to normalize, keyed by element type.
+# Column section sizes and beam section sizes/spans vary with random sizing noise,
+# so they need z-score normalization. Everything else is either binary, already
+# bounded, or spectrally bounded.
+NORM_COLUMN_FEATURES = ["I_col", "A_col"]
+NORM_BEAM_FEATURES = ["I_beam", "A_beam", "span"]
+
+
+def feature_indices(names):
+    """Return tensor column indices for the given feature names."""
+    return [FEATURE_NAMES.index(n) for n in names]
+
+
+def _laplacian_pe(edge_index, num_nodes, k=LAPLACIAN_PE_DIM):
+    """Compute Laplacian Positional Encoding for each node.
+
+    Returns an [N, k] tensor where each node gets k spectral coordinates.
+    """
+    row = edge_index[0].numpy()
+    col = edge_index[1].numpy()
+    A = np.zeros((num_nodes, num_nodes))
+    A[row, col] = 1.0
+    A = np.maximum(A, A.T)  # symmetrize
+    deg = A.sum(axis=1)
+    d_inv_sqrt = np.where(deg > 0, 1.0 / np.sqrt(deg), 0.0)
+    L = np.eye(num_nodes) - d_inv_sqrt[:, None] * A * d_inv_sqrt[None, :]
+    _, vecs = np.linalg.eigh(L)
+    pe = vecs[:, 1 : k + 1]  # skip trivial eigenvector 0
+    if pe.shape[1] < k:
+        pe = np.pad(pe, ((0, 0), (0, k - pe.shape[1])))
+    return torch.tensor(pe, dtype=torch.float)
+
+
 class GraphHandler:
     def __init__(self, conf):
         self.num_cols = conf["num_cols"]
@@ -527,6 +588,21 @@ class GraphHandler:
             pickle.dump(G, file)
 
     @staticmethod
+    def save_base_line_graphs(nx_graphs, directory, name="line_graphs.pkl"):
+        """Save NetworkX line graphs as base data (topology + attributes, no feature extraction)."""
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        path = os.path.join(directory, name)
+        with open(path, "wb") as f:
+            pickle.dump(nx_graphs, f)
+
+    @staticmethod
+    def load_base_line_graphs(path):
+        """Load NetworkX line graphs from base data."""
+        with open(path, "rb") as f:
+            return pickle.load(f)
+
+    @staticmethod
     def save_pyg_line_graphs(nx_graphs, dir, name, has_label=True, use_virtual_node=True):
         if not os.path.exists(dir):
             os.makedirs(dir)
@@ -561,6 +637,10 @@ class GraphHandler:
                 dtype=torch.float,
             )
             weight = sum([node["D"] * node["W"] * node["dist"] * int(node.get("real", 1)) for node in nodes])
+
+            # Laplacian Positional Encoding (computed on line graph before virtual node)
+            pe = _laplacian_pe(edge_index, num_nodes=x.shape[0], k=8)
+            x = torch.cat([x, pe], dim=1)  # [N, 13] → [N, 21]
 
             if use_virtual_node:
                 # Add virtual node (all-zero features; real=0 at index 4 marks it as non-physical)

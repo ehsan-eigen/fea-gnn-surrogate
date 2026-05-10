@@ -48,9 +48,9 @@ examples:
     parser.add_argument("--no_save_graphs", action="store_true",
                         help="Do not save raw and simplified NetworkX graphs to disk "
                              "(they are saved by default for visualization in Stage 3)")
-    parser.add_argument("--hf_repo", type=str, default="ehsan94/fea-gnn-surrogate",
-                        help="Hugging Face dataset repo to upload datasets to "
-                             "(default: ehsan94/fea-gnn-surrogate). Reads HF_TOKEN from environment.")
+    parser.add_argument("--hf_repo", type=str, default=None,
+                        help="Hugging Face dataset repo to upload datasets to. "
+                             "If not set, no upload is performed. Reads HF_TOKEN from environment.")
     args = parser.parse_args()
 
     save_graphs = not args.no_save_graphs
@@ -66,6 +66,13 @@ examples:
     )
 
     has_label = not args.skip_fea
+
+    # Save base NX line graphs (topology + attributes, no feature extraction).
+    # Re-run only extract_features.py when changing features — no need to redo FEA.
+    base_dir = os.path.join(args.output_dir, args.mode, "base")
+    GraphHandler.save_base_line_graphs(line_graphs, base_dir, "line_graphs.pkl")
+    GraphHandler.save_base_line_graphs(line_graphs_hop, base_dir, "line_graphs_hop.pkl")
+    print(f"Saved base line graphs to {base_dir}/")
 
     variants = [
         ("hop_edges", line_graphs_hop, False),

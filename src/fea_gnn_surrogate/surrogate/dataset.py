@@ -4,6 +4,13 @@ import torch
 from torch_geometric.loader import DataLoader
 from sklearn.model_selection import train_test_split
 
+from fea_gnn_surrogate.graph.graph_utils import (
+    FEATURE_NAMES,
+    NORM_COLUMN_FEATURES,
+    NORM_BEAM_FEATURES,
+    feature_indices,
+)
+
 
 def _resolve_dataset_path(path):
     """If path uses hf://owner/repo/path/file.pkl, check locally first, then download."""
@@ -55,30 +62,38 @@ def compute_class_weight(train_data):
 
 
 def compute_normalization_stats(train_data):
-    """Compute normalization stats from training data for column/beam features."""
+    """Compute z-score stats for section-size features that vary with random sizing.
+
+    Only section properties are normalized:
+    - Columns (is_column == 1): I_col, A_col
+    - Beams   (is_column == 0): I_beam, A_beam, span
+
+    Other features are either binary, already bounded by construction,
+    or spectrally bounded (Laplacian PE), so they don't need normalization.
+    """
     X = torch.cat([data.x for data in train_data])
-    mask = X[:, 0] == 1
-    mask_mean = X[mask, 8:10].mean(dim=0)
-    mask_std = X[mask, 8:10].std(dim=0)
-    not_mask_mean = X[~mask, 10:].mean(dim=0)
-    not_mask_std = X[~mask, 10:].std(dim=0)
+    is_column = X[:, FEATURE_NAMES.index("is_column")] == 1
+
+    col_idx = feature_indices(NORM_COLUMN_FEATURES)
+    beam_idx = feature_indices(NORM_BEAM_FEATURES)
+
     return {
-        "mask_mean": mask_mean,
-        "mask_std": mask_std,
-        "not_mask_mean": not_mask_mean,
-        "not_mask_std": not_mask_std,
+        "col_mean": X[is_column][:, col_idx].mean(dim=0),
+        "col_std": X[is_column][:, col_idx].std(dim=0),
+        "beam_mean": X[~is_column][:, beam_idx].mean(dim=0),
+        "beam_std": X[~is_column][:, beam_idx].std(dim=0),
     }
 
 
 def normalize_data(data_list, stats):
-    """Apply normalization stats to a data list in-place."""
-    mask_mean = stats["mask_mean"]
-    mask_std = stats["mask_std"]
-    not_mask_mean = stats["not_mask_mean"]
-    not_mask_std = stats["not_mask_std"]
+    """Apply z-score normalization to section-size features in-place."""
+    col_idx = feature_indices(NORM_COLUMN_FEATURES)
+    beam_idx = feature_indices(NORM_BEAM_FEATURES)
 
     for data in data_list:
-        mask = data.x[:, 0] == 1
-        data.x[mask, 8:10] = (data.x[mask, 8:10] - mask_mean) / mask_std
-        data.x[~mask, 10:] = (data.x[~mask, 10:] - not_mask_mean) / not_mask_std
+        is_column = data.x[:, FEATURE_NAMES.index("is_column")] == 1
+        for i, ci in enumerate(col_idx):
+            data.x[is_column, ci] = (data.x[is_column, ci] - stats["col_mean"][i]) / stats["col_std"][i]
+        for i, bi in enumerate(beam_idx):
+            data.x[~is_column, bi] = (data.x[~is_column, bi] - stats["beam_mean"][i]) / stats["beam_std"][i]
     return data_list
