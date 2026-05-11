@@ -298,24 +298,26 @@ Each generation run produces two graph representations of the **same** structure
 | **`with_vn`** | Global shared virtual node connected to all elements — every element is exactly 2 hops from every other |
 | **`no_vn`** | No artificial edges; pure local message passing (baseline) |
 
-### Experimental results (with Laplacian PE, k=8)
+### Experimental results (with Laplacian PE, k=8, variable load)
+
+Training uses variable loads: vertical and horizontal forces are sampled from distributions (see `load` section in `config.json`) rather than fixed values. This makes the surrogate robust to load variation but also increases the effective complexity of the learning task.
 
 #### SharedMPNN
 
 | Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
 |---|---|---|---|---|---|---|
-| No edges (baseline) | 0.9830 | 0.1698 | 0.9980 | 0.0436 | 0.9985 | 0.0560 |
-| Virtual node | 0.9836 | 0.2031 | 0.9979 | 0.0408 | 0.9974 | 0.0613 |
+| No edges (baseline) | 0.9814 | 0.1713 | 0.9978 | 0.0524 | 0.9986 | 0.0573 |
+| Virtual node | **0.9835** | **0.1478** | **0.9979** | **0.0448** | **0.9989** | **0.0309** |
 
-With Laplacian positional encoding, both SharedMPNN variants perform similarly. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes.
+With Laplacian positional encoding, both SharedMPNN variants perform similarly in AUC. The virtual node variant achieves lower test losses, particularly on test_3. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes.
 
 #### GPS Graph Transformer
 
 | Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
 |---|---|---|---|---|---|---|
-| GPS (no edges) | **0.9813** | **0.1754** | **0.9985** | **0.0262** | **0.9992** | **0.0214** |
+| GPS (no edges) | **0.9881** | 0.2287 | 0.9983 | 0.1102 | 0.9986 | 0.1154 |
 
-GPS is trained on the plain line graph (`no_vn`) — no virtual node needed. Global self-attention replaces all hand-crafted long-range connections. On test_2 and test_3 it substantially outperforms both SharedMPNN variants, matching or exceeding the best MPNN result on test_1 as well.
+GPS is trained on the plain line graph (`no_vn`) — no virtual node needed. Global self-attention replaces all hand-crafted long-range connections. GPS achieves the highest AUC on test_1 (0.9881), but its test losses are significantly higher than the SharedMPNN variants despite having the lowest validation loss (0.0130 vs 0.0154 for MPNN with_vn). This gap between validation and test performance indicates overfitting: the additional parameters in the attention mechanism fit noise in the training distribution rather than learning more generalizable patterns. SharedMPNN's weight-sharing constraint acts as a stronger regularizer, producing better-calibrated predictions on unseen geometries.
 
 ---
 

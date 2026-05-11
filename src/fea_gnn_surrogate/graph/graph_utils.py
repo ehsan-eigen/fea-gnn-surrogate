@@ -36,6 +36,10 @@ FEATURE_NAMES = [
     "I_beam",       # D³·W·cos(θ) — beam moment of inertia
     "A_beam",       # D·W·cos(θ) — beam cross-section area
     "span",         # dist·cos(θ) — beam span length
+    "load_axial_i",      # axial load component at node i (along element axis)
+    "load_transverse_i", # transverse load component at node i (perpendicular to axis)
+    "load_axial_j",      # axial load component at node j (along element axis)
+    "load_transverse_j", # transverse load component at node j (perpendicular to axis)
 ] + [f"pe_{i}" for i in range(LAPLACIAN_PE_DIM)]
 
 # Which features to normalize, keyed by element type.
@@ -44,6 +48,9 @@ FEATURE_NAMES = [
 # bounded, or spectrally bounded.
 NORM_COLUMN_FEATURES = ["I_col", "A_col"]
 NORM_BEAM_FEATURES = ["I_beam", "A_beam", "span"]
+# Load features are normalized globally (not split by element type) since they
+# depend on node position, not element type.
+NORM_LOAD_FEATURES = ["load_axial_i", "load_transverse_i", "load_axial_j", "load_transverse_j"]
 
 
 def feature_indices(names):
@@ -82,6 +89,20 @@ class GraphHandler:
         self.possible_columns_down = conf.get("possible_columns_down")
         self.distance_lower_bound = conf.get("distance_lower_bound", 4)
         self.distance_upper_bound = conf.get("distance_upper_bound", 10)
+
+        load_conf = conf.get("load", {})
+        self.vertical_mean = load_conf.get("vertical_mean", -20000)
+        self.vertical_std = load_conf.get("vertical_std", 0)
+        self.horizontal_base_mean = load_conf.get("horizontal_base_mean", 7000)
+        self.horizontal_base_std = load_conf.get("horizontal_base_std", 0)
+        self.horizontal_slope_mean = load_conf.get("horizontal_slope_mean", 21000)
+        self.horizontal_slope_std = load_conf.get("horizontal_slope_std", 0)
+
+        # Initialise with mean values (overwritten by sample_load_params per episode)
+        self._vertical_load = self.vertical_mean
+        self._horizontal_base = self.horizontal_base_mean
+        self._horizontal_slope = self.horizontal_slope_mean
+        self._wind_direction = 1
 
     def generate_graph(self, mode="train"):
         G = nx.grid_2d_graph(self.num_cols, self.num_rows)
@@ -206,13 +227,50 @@ class GraphHandler:
                 G.nodes[node]["DOF"] = [1, 1, 1]
                 G.nodes[node]["free"] = [1]
 
+    def sample_load_params(self):
+        """Sample load parameters for one structure from the configured distributions."""
+        self._vertical_load = np.random.normal(self.vertical_mean, self.vertical_std)
+        self._horizontal_base = np.random.normal(self.horizontal_base_mean, self.horizontal_base_std)
+        self._horizontal_slope = np.random.normal(self.horizontal_slope_mean, self.horizontal_slope_std)
+        self._wind_direction = np.random.choice([1, -1])
+
     def set_loads(self, G):
+        """Apply loads using the current sampled parameters.
+
+        Horizontal wind: F_h = base + slope × (floor - 1), applied on the
+        windward face (left face for direction=+1, right face for direction=-1).
+        Vertical gravity: constant on all nodes.
+        """
         for node in G.nodes():
-            x, y = G.nodes[node]["pos"]
-            if x == 0 and y > self.transfer_row:
-                G.nodes[node]["load"] = [7 * 1e3 * (y - self.transfer_row), -20 * 1e3, 0]
+            col, floor = G.nodes[node]["coo"]
+            if self._wind_direction == 1:
+                windward = col == 0
             else:
-                G.nodes[node]["load"] = [0, -20 * 1e3, 0]
+                windward = col == self.num_cols - 1
+            if windward and floor >= 1:
+                f_h = self._horizontal_base + self._horizontal_slope * (floor - 1)
+                G.nodes[node]["load"] = [self._wind_direction * f_h, self._vertical_load, 0]
+            else:
+                G.nodes[node]["load"] = [0, self._vertical_load, 0]
+
+    def set_load_decomposition(self, Gs):
+        """Decompose endpoint loads into axial and transverse components per element.
+
+        For each edge (u, v) with rotation θ, projects the nodal force vectors
+        [Fx, Fy] at both endpoints onto the element's local axes:
+          axial      =  Fx·cos(θ) + Fy·sin(θ)   (along member)
+          transverse = -Fx·sin(θ) + Fy·cos(θ)   (perpendicular to member)
+        """
+        for u, v in Gs.edges():
+            load_u = Gs.nodes[u]["load"]
+            load_v = Gs.nodes[v]["load"]
+            theta = Gs[u][v]["rotation"]
+            cos_t = np.cos(theta)
+            sin_t = np.sin(theta)
+            Gs[u][v]["load_axial_i"] = load_u[0] * cos_t + load_u[1] * sin_t
+            Gs[u][v]["load_transverse_i"] = -load_u[0] * sin_t + load_u[1] * cos_t
+            Gs[u][v]["load_axial_j"] = load_v[0] * cos_t + load_v[1] * sin_t
+            Gs[u][v]["load_transverse_j"] = -load_v[0] * sin_t + load_v[1] * cos_t
 
     def set_rotation(self, G):
         for u, v in G.edges():
@@ -615,6 +673,10 @@ class GraphHandler:
                         node["D"] ** 3 * node["W"] * np.cos(node["rotation"]),
                         node["D"] * node["W"] * np.cos(node["rotation"]),
                         node["dist"] * np.cos(node["rotation"]),
+                        node.get("load_axial_i", 0),
+                        node.get("load_transverse_i", 0),
+                        node.get("load_axial_j", 0),
+                        node.get("load_transverse_j", 0),
                     ]
                     for node in nodes
                 ],
@@ -624,7 +686,7 @@ class GraphHandler:
 
             # Laplacian Positional Encoding (computed on line graph before virtual node)
             pe = _laplacian_pe(edge_index, num_nodes=x.shape[0], k=8)
-            x = torch.cat([x, pe], dim=1)  # [N, 13] → [N, 21]
+            x = torch.cat([x, pe], dim=1)  # [N, 17] → [N, 25]
 
             if use_virtual_node:
                 # Add virtual node (all-zero features; real=0 at index 4 marks it as non-physical)

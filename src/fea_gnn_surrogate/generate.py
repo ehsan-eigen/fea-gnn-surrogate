@@ -26,6 +26,7 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
         if mode == "train":
             graph_handler.num_rows = conf["num_rows"] + np.random.randint(low=-3, high=3)
 
+        graph_handler.sample_load_params()
         G = graph_handler.generate_graph(mode=mode)
         Gs = graph_handler.simplify_graph(G)
 
@@ -70,6 +71,7 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
             Gs = graph_handler.calc_ver_deflection(Gs)
             Gs = graph_handler.calc_drift(G, Gs, UG)
 
+        graph_handler.set_load_decomposition(Gs)
         L = nx.line_graph(Gs)
         L.add_nodes_from((node, Gs.edges[node]) for node in L)
         L = GraphHandler.node_tuple_2_index(L)

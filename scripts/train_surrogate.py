@@ -51,7 +51,7 @@ def main():
     parser.add_argument("--attn_dropout", type=float, default=0.2,
                         help="Attention dropout rate (GPS only, default: 0.2)")
     parser.add_argument("--save_path", type=str, default=None,
-                        help="Model save path (default: best_model_<edge_strategy>.pth)")
+                        help="Model save path (default: best_model_<model>_<edge_strategy>.pth)")
     parser.add_argument("--log_dir", type=str, default="./logs/", help="Tensorboard log directory")
     parser.add_argument("--test_size", type=float, default=0.3, help="Validation split ratio")
     parser.add_argument("--hf_repo", type=str, default=None,
@@ -60,7 +60,7 @@ def main():
     args = parser.parse_args()
 
     if args.save_path is None:
-        args.save_path = f"best_model_{args.edge_strategy}.pth"
+        args.save_path = f"best_model_{args.model}_{args.edge_strategy}.pth"
 
     dataset_path = _dataset_path(args.data_dir, args.mode, args.edge_strategy)
     data_list = load_dataset(dataset_path)

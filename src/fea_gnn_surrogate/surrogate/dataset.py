@@ -8,6 +8,7 @@ from fea_gnn_surrogate.graph.graph_utils import (
     FEATURE_NAMES,
     NORM_COLUMN_FEATURES,
     NORM_BEAM_FEATURES,
+    NORM_LOAD_FEATURES,
     feature_indices,
 )
 
@@ -62,11 +63,14 @@ def compute_class_weight(train_data):
 
 
 def compute_normalization_stats(train_data):
-    """Compute z-score stats for section-size features that vary with random sizing.
+    """Compute z-score stats for features that vary across samples.
 
-    Only section properties are normalized:
+    Section properties are normalized per element type:
     - Columns (is_column == 1): I_col, A_col
     - Beams   (is_column == 0): I_beam, A_beam, span
+
+    Load features are normalized globally (not split by element type)
+    since they depend on node position, not element type.
 
     Other features are either binary, already bounded by construction,
     or spectrally bounded (Laplacian PE), so they don't need normalization.
@@ -76,19 +80,23 @@ def compute_normalization_stats(train_data):
 
     col_idx = feature_indices(NORM_COLUMN_FEATURES)
     beam_idx = feature_indices(NORM_BEAM_FEATURES)
+    load_idx = feature_indices(NORM_LOAD_FEATURES)
 
     return {
         "col_mean": X[is_column][:, col_idx].mean(dim=0),
         "col_std": X[is_column][:, col_idx].std(dim=0),
         "beam_mean": X[~is_column][:, beam_idx].mean(dim=0),
         "beam_std": X[~is_column][:, beam_idx].std(dim=0),
+        "load_mean": X[:, load_idx].mean(dim=0),
+        "load_std": X[:, load_idx].std(dim=0),
     }
 
 
 def normalize_data(data_list, stats):
-    """Apply z-score normalization to section-size features in-place."""
+    """Apply z-score normalization to section-size and load features in-place."""
     col_idx = feature_indices(NORM_COLUMN_FEATURES)
     beam_idx = feature_indices(NORM_BEAM_FEATURES)
+    load_idx = feature_indices(NORM_LOAD_FEATURES)
 
     for data in data_list:
         is_column = data.x[:, FEATURE_NAMES.index("is_column")] == 1
@@ -96,4 +104,6 @@ def normalize_data(data_list, stats):
             data.x[is_column, ci] = (data.x[is_column, ci] - stats["col_mean"][i]) / stats["col_std"][i]
         for i, bi in enumerate(beam_idx):
             data.x[~is_column, bi] = (data.x[~is_column, bi] - stats["beam_mean"][i]) / stats["beam_std"][i]
+        for i, li in enumerate(load_idx):
+            data.x[:, li] = (data.x[:, li] - stats["load_mean"][i]) / stats["load_std"][i]
     return data_list
