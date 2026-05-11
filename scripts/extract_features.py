@@ -5,7 +5,7 @@ regenerate structures or re-run FEA.
 
 Examples:
   python scripts/extract_features.py --mode train
-  python scripts/extract_features.py --mode test_1 --skip_fea
+  python scripts/extract_features.py --mode dataset_3 --skip_fea
 """
 import argparse
 import os

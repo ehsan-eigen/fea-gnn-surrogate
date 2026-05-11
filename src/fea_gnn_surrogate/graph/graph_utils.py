@@ -104,7 +104,7 @@ class GraphHandler:
         self._horizontal_slope = self.horizontal_slope_mean
         self._wind_direction = 1
 
-    def generate_graph(self, mode="train"):
+    def generate_graph(self):
         G = nx.grid_2d_graph(self.num_cols, self.num_rows)
         self.set_coo(G)
         self.set_pos(G)

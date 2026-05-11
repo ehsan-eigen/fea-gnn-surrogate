@@ -16,7 +16,7 @@ EDGE_STRATEGIES = ["with_vn", "no_vn"]
 def main():
     parser = argparse.ArgumentParser(description="Run GNN surrogate inference on test structures")
     parser.add_argument("--test_name", type=str, required=True,
-                        help="Config section for the test case (e.g. test_1, test_2, ...)")
+                        help="Config section for the test case (e.g. dataset_2, dataset_3, ...)")
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")

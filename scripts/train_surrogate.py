@@ -33,7 +33,7 @@ def main():
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")
     parser.add_argument("--test_sets", type=str, nargs="*", default=None,
-                        help="Test sets to evaluate after training (e.g. test_1 test_2). "
+                        help="Test sets to evaluate after training (e.g. dataset_2 dataset_3). "
                              "Uses the same edge strategy as training.")
     parser.add_argument("--data_dir", type=str, default="hf://ehsan94/fea-gnn-surrogate",
                         help="Root data directory or hf://owner/repo (default: hf://ehsan94/fea-gnn-surrogate)")

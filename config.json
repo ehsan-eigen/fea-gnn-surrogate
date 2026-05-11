@@ -1,5 +1,5 @@
 {
-    "train": {
+    "dataset_1": {
         "num_cols": 130,
         "num_rows": 11,
         "transfer_row": 2,
@@ -9,11 +9,11 @@
         "distance_upper_bound": 10,
         "load": {
             "vertical_mean": -20000,
-            "vertical_std": 500,
+            "vertical_std": 3000,
             "horizontal_base_mean": 7000,
-            "horizontal_base_std": 300,
+            "horizontal_base_std": 1500,
             "horizontal_slope_mean": 21000,
-            "horizontal_slope_std": 500
+            "horizontal_slope_std": 3000
         },
         "possible_columns_up": [
             0,
@@ -280,7 +280,7 @@
             129
         ]
     },
-    "test_1": {
+    "dataset_2": {
         "num_cols": 130,
         "num_rows": 11,
         "transfer_row": 2,
@@ -332,7 +332,7 @@
             128
         ]
     },
-    "test_2": {
+    "dataset_3": {
         "num_cols": 100,
         "num_rows": 8,
         "transfer_row": 2,
@@ -471,7 +471,7 @@
             99
         ]
     },
-    "test_3": {
+    "dataset_4": {
         "num_cols": 160,
         "num_rows": 9,
         "transfer_row": 2,
@@ -653,7 +653,7 @@
             156
         ]
     },
-    "test_4": {
+    "dataset_5": {
         "num_cols": 100,
         "num_rows": 13,
         "transfer_row": 2,
@@ -766,7 +766,7 @@
             99
         ]
     },
-    "test_5": {
+    "dataset_6": {
         "num_cols": 160,
         "num_rows": 14,
         "transfer_row": 2,
