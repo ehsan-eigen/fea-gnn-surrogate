@@ -20,8 +20,10 @@ def main():
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")
+    parser.add_argument("--model", type=str, default="mpnn", choices=["mpnn", "gps"],
+                        help="Model architecture: mpnn or gps (default: mpnn)")
     parser.add_argument("--model_path", type=str, default=None,
-                        help="Path to trained model checkpoint (default: best_model_<edge_strategy>.pth)")
+                        help="Path to trained model checkpoint (default: best_model_<model>_<edge_strategy>.pth)")
     parser.add_argument("--config", type=str, default="config.json",
                         help="Path to the configuration file (default: config.json)")
     parser.add_argument("--data_dir", type=str, default="data",
@@ -39,7 +41,7 @@ def main():
     args = parser.parse_args()
 
     if args.model_path is None:
-        args.model_path = f"best_model_{args.edge_strategy}.pth"
+        args.model_path = f"best_model_{args.model}_{args.edge_strategy}.pth"
 
     dataset_path = os.path.join(
         args.data_dir, args.test_name, args.edge_strategy, "dataset", "pyg_line_graphs.pkl"
@@ -51,7 +53,8 @@ def main():
     num_features = val_data[0].x.shape[1]
     model, norm_stats = load_model(
         args.model_path, num_features,
-        hidden_dim=args.hidden_dim, num_mp_steps=args.mp_steps
+        hidden_dim=args.hidden_dim, num_mp_steps=args.mp_steps,
+        model_type=args.model,
     )
 
     if norm_stats is not None:

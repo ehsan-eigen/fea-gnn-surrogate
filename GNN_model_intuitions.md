@@ -147,12 +147,14 @@ Graph Transformers use **self-attention** as an all-to-all message passing mecha
 
 | Approach | Pros | Cons |
 |---|---|---|
-| SharedMPNN + virtual node | Tiny model, works with 100 samples | Less expressive than attention |
+| SharedMPNN + virtual node | Tiny model, works with 100 samples, best-calibrated predictions | Less expressive than attention |
 | SharedMPNN + no edges | Simplest graph, no artificial nodes | Relies entirely on positional encodings for long-range |
-| GPS Graph Transformer | Learns long-range interactions, best performance | More parameters |
+| GPS Graph Transformer | Learns long-range interactions, highest AUC on out-of-distribution test sets | More parameters; prone to overfitting — higher test loss despite lower validation loss |
 
 ---
 
 ## Summary
 
 The SharedMPNN architecture is a sound choice for this constrained problem: weight sharing prevents overfitting on a small dataset, and repeated message passing extends the receptive field. Long-range dependencies are handled through the virtual node, Laplacian positional encodings, or the GPS Graph Transformer — all of which avoid hand-crafted domain edges and generalize to new structure families without expert redesign.
+
+With variable loads (sampled from distributions rather than fixed values), SharedMPNN with virtual node produces the best-calibrated predictions (lowest test loss) while GPS achieves slightly higher AUC but significantly higher test loss — evidence that its extra parameters overfit the training distribution. The weight-sharing constraint in SharedMPNN acts as a strong regularizer that becomes increasingly valuable when the input distribution is broadened by load variation.
