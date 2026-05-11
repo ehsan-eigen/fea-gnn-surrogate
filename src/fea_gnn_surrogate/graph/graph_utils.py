@@ -90,6 +90,20 @@ class GraphHandler:
         self.distance_lower_bound = conf.get("distance_lower_bound", 4)
         self.distance_upper_bound = conf.get("distance_upper_bound", 10)
 
+        load_conf = conf.get("load", {})
+        self.vertical_mean = load_conf.get("vertical_mean", -20000)
+        self.vertical_std = load_conf.get("vertical_std", 0)
+        self.horizontal_base_mean = load_conf.get("horizontal_base_mean", 7000)
+        self.horizontal_base_std = load_conf.get("horizontal_base_std", 0)
+        self.horizontal_slope_mean = load_conf.get("horizontal_slope_mean", 21000)
+        self.horizontal_slope_std = load_conf.get("horizontal_slope_std", 0)
+
+        # Initialise with mean values (overwritten by sample_load_params per episode)
+        self._vertical_load = self.vertical_mean
+        self._horizontal_base = self.horizontal_base_mean
+        self._horizontal_slope = self.horizontal_slope_mean
+        self._wind_direction = 1
+
     def generate_graph(self, mode="train"):
         G = nx.grid_2d_graph(self.num_cols, self.num_rows)
         self.set_coo(G)
@@ -213,13 +227,31 @@ class GraphHandler:
                 G.nodes[node]["DOF"] = [1, 1, 1]
                 G.nodes[node]["free"] = [1]
 
+    def sample_load_params(self):
+        """Sample load parameters for one structure from the configured distributions."""
+        self._vertical_load = np.random.normal(self.vertical_mean, self.vertical_std)
+        self._horizontal_base = np.random.normal(self.horizontal_base_mean, self.horizontal_base_std)
+        self._horizontal_slope = np.random.normal(self.horizontal_slope_mean, self.horizontal_slope_std)
+        self._wind_direction = np.random.choice([1, -1])
+
     def set_loads(self, G):
+        """Apply loads using the current sampled parameters.
+
+        Horizontal wind: F_h = base + slope × (floor - 1), applied on the
+        windward face (left face for direction=+1, right face for direction=-1).
+        Vertical gravity: constant on all nodes.
+        """
         for node in G.nodes():
-            x, y = G.nodes[node]["pos"]
-            if x == 0 and y > self.transfer_row:
-                G.nodes[node]["load"] = [7 * 1e3 * (y - self.transfer_row), -20 * 1e3, 0]
+            col, floor = G.nodes[node]["coo"]
+            if self._wind_direction == 1:
+                windward = col == 0
             else:
-                G.nodes[node]["load"] = [0, -20 * 1e3, 0]
+                windward = col == self.num_cols - 1
+            if windward and floor >= 1:
+                f_h = self._horizontal_base + self._horizontal_slope * (floor - 1)
+                G.nodes[node]["load"] = [self._wind_direction * f_h, self._vertical_load, 0]
+            else:
+                G.nodes[node]["load"] = [0, self._vertical_load, 0]
 
     def set_load_decomposition(self, Gs):
         """Decompose endpoint loads into axial and transverse components per element.

@@ -26,6 +26,7 @@ def generate_samples(config_path, mode="train", num_episodes=1000,
         if mode == "train":
             graph_handler.num_rows = conf["num_rows"] + np.random.randint(low=-3, high=3)
 
+        graph_handler.sample_load_params()
         G = graph_handler.generate_graph(mode=mode)
         Gs = graph_handler.simplify_graph(G)
 
