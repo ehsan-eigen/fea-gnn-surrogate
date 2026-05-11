@@ -8,7 +8,7 @@ from fea_gnn_surrogate.graph.graph_utils import GraphHandler
 
 
 def generate_samples(config_path, datasets=None, num_episodes=1000,
-                     training=True, num_rows_range=None, fea=True,
+                     mode="train", fea=True,
                      visualize=False, image_dir="images/",
                      save_graphs=False, output_dir="data"):
     """Generate structural samples and run FEA.
@@ -18,18 +18,13 @@ def generate_samples(config_path, datasets=None, num_episodes=1000,
     config_path : str
         Path to config.json.
     datasets : list[str] or str, optional
-        Dataset key(s) in config.json. For training, each episode randomly
-        picks one config from the list. Defaults to DEFAULT_TRAIN_DATASETS
-        when training=True, or must be a single string when training=False.
-    training : bool
-        When True, applies per-episode augmentation: variable transfer_row,
-        num_rows, and load sampling.
-    num_rows_range : list[int], optional
-        [min, max] range for uniform num_rows sampling during training.
-        Defaults to [config_num_rows - 3, config_num_rows + 3] per dataset.
+        Dataset key(s) in config.json. Each episode randomly picks one
+        config from the list. Defaults to DEFAULT_TRAIN_DATASETS.
+    mode : str
+        "train" or "test". Used for output directory labelling.
     """
     if datasets is None:
-        datasets = DEFAULT_TRAIN_DATASETS if training else ["dataset_1"]
+        datasets = DEFAULT_TRAIN_DATASETS
 
     if isinstance(datasets, str):
         datasets = [datasets]
@@ -39,24 +34,18 @@ def generate_samples(config_path, datasets=None, num_episodes=1000,
 
     episode = 0
     line_graphs = []
-    mode_label = "train" if training else datasets[0]
 
     while episode < num_episodes:
         conf = configs[np.random.randint(len(configs))]
         graph_handler = GraphHandler(conf)
 
-        if training:
-            # Vary transfer_row: 2 most likely, 3 less, 4 least
-            graph_handler.transfer_row = np.random.choice(
-                [2, 3, 4], p=[0.6, 0.3, 0.1]
-            )
-            # Vary num_rows: uniform within range
-            if num_rows_range is not None:
-                lo, hi = num_rows_range
-            else:
-                lo = conf["num_rows"] - 3
-                hi = conf["num_rows"] + 3
-            graph_handler.num_rows = np.random.randint(lo, hi + 1)
+        # Vary transfer_row: 2 most likely, 3 less, 4 least
+        graph_handler.transfer_row = np.random.choice(
+            [2, 3, 4], p=[0.6, 0.3, 0.1]
+        )
+        # Vary num_rows: uniform within config range
+        lo, hi = conf["num_rows_range"]
+        graph_handler.num_rows = np.random.randint(lo, hi + 1)
 
         graph_handler.sample_load_params()
         G = graph_handler.generate_graph()
@@ -114,8 +103,8 @@ def generate_samples(config_path, datasets=None, num_episodes=1000,
         line_graphs.append(L)
 
         if save_graphs:
-            graph_handler.save_graph(G, os.path.join(output_dir, mode_label, "raw", "graphs"))
-            graph_handler.save_graph(Gs, os.path.join(output_dir, mode_label, "simplified", "graphs"))
+            graph_handler.save_graph(G, os.path.join(output_dir, mode, "raw", "graphs"))
+            graph_handler.save_graph(Gs, os.path.join(output_dir, mode, "simplified", "graphs"))
 
         Gs = GraphHandler.node_tuple_2_index(Gs)
         if visualize:

@@ -81,7 +81,8 @@ def _laplacian_pe(edge_index, num_nodes, k=LAPLACIAN_PE_DIM):
 class GraphHandler:
     def __init__(self, conf):
         self.num_cols = conf["num_cols"]
-        self.num_rows = conf["num_rows"]
+        lo, hi = conf["num_rows_range"]
+        self.num_rows = (lo + hi) // 2
         self.transfer_row = conf["transfer_row"]
         self.horizontal_scale = conf["horizontal_scale"]
         self.vertical_scale = conf["vertical_scale"]

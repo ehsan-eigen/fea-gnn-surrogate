@@ -26,27 +26,22 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""\
 examples:
-  # Training data (uses default training datasets with augmentation):
+  # Training data (uses default training datasets):
   python scripts/generate_dataset.py --num_samples 1000
 
   # Training data from specific datasets:
   python scripts/generate_dataset.py --datasets dataset_1 dataset_4 --num_samples 1000
 
-  # Test data (no augmentation, single dataset):
-  python scripts/generate_dataset.py --datasets dataset_3 --no_training --num_samples 500
+  # Test data:
+  python scripts/generate_dataset.py --mode test --datasets dataset_2 dataset_3 --num_samples 500
 """,
     )
+    parser.add_argument("--mode", type=str, default="train", choices=["train", "test"],
+                        help="Generation mode: train or test (default: train)")
     parser.add_argument("--datasets", type=str, nargs="*", default=None,
                         help="Dataset keys from config.json (default: %(default)s). "
                              f"Available: dataset_1 through dataset_6. "
                              f"Training default: {DEFAULT_TRAIN_DATASETS}")
-    parser.add_argument("--no_training", action="store_true",
-                        help="Disable training augmentation (variable transfer_row, "
-                             "num_rows, load sampling). Use for generating test data.")
-    parser.add_argument("--num_rows_range", type=int, nargs=2, default=None,
-                        metavar=("MIN", "MAX"),
-                        help="Uniform num_rows range for training, e.g. --num_rows_range 9 12. "
-                             "Default: each dataset's num_rows ± 3.")
     parser.add_argument("--num_samples", type=int, default=1000,
                         help="Number of structures to generate (default: 1000)")
     parser.add_argument("--config", type=str, default="config.json",
@@ -54,8 +49,7 @@ examples:
     parser.add_argument("--output_dir", type=str, default="data",
                         help="Root output directory (default: data)")
     parser.add_argument("--output_label", type=str, default=None,
-                        help="Subdirectory label under output_dir (default: 'train' for "
-                             "training, or the single dataset name for test)")
+                        help="Subdirectory label under output_dir (default: value of --mode)")
     parser.add_argument("--output_name", type=str, default="pyg_line_graphs.pkl",
                         help="Filename for the saved PyG dataset (default: pyg_line_graphs.pkl)")
     parser.add_argument("--visualize", action="store_true",
@@ -71,20 +65,11 @@ examples:
                              "If not set, no upload is performed. Reads HF_TOKEN from environment.")
     args = parser.parse_args()
 
-    training = not args.no_training
     datasets = args.datasets
-
     if datasets is None:
-        datasets = DEFAULT_TRAIN_DATASETS if training else None
-        if datasets is None:
-            parser.error("--datasets is required when using --no_training")
+        datasets = DEFAULT_TRAIN_DATASETS
 
-    if args.output_label is not None:
-        label = args.output_label
-    elif training:
-        label = "train"
-    else:
-        label = datasets[0] if len(datasets) == 1 else "test"
+    label = args.output_label if args.output_label is not None else args.mode
 
     save_graphs = not args.no_save_graphs
 
@@ -92,8 +77,7 @@ examples:
         config_path=args.config,
         datasets=datasets,
         num_episodes=args.num_samples,
-        training=training,
-        num_rows_range=args.num_rows_range,
+        mode=args.mode,
         fea=not args.skip_fea,
         visualize=args.visualize,
         save_graphs=save_graphs,
