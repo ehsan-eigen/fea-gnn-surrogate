@@ -290,11 +290,11 @@
         "distance_upper_bound": 10,
         "load": {
             "vertical_mean": -20000,
-            "vertical_std": 0,
+            "vertical_std": 100,
             "horizontal_base_mean": 7000,
-            "horizontal_base_std": 0,
+            "horizontal_base_std": 500,
             "horizontal_slope_mean": 21000,
-            "horizontal_slope_std": 0
+            "horizontal_slope_std": 100
         },
         "possible_columns_up": [
             4,
@@ -342,11 +342,11 @@
         "distance_upper_bound": 10,
         "load": {
             "vertical_mean": -20000,
-            "vertical_std": 0,
+            "vertical_std": 100,
             "horizontal_base_mean": 7000,
-            "horizontal_base_std": 0,
+            "horizontal_base_std": 500,
             "horizontal_slope_mean": 21000,
-            "horizontal_slope_std": 0
+            "horizontal_slope_std": 100
         },
         "possible_columns_up": [
             5,
@@ -481,11 +481,11 @@
         "distance_upper_bound": 10,
         "load": {
             "vertical_mean": -20000,
-            "vertical_std": 0,
+            "vertical_std": 100,
             "horizontal_base_mean": 7000,
-            "horizontal_base_std": 0,
+            "horizontal_base_std": 500,
             "horizontal_slope_mean": 21000,
-            "horizontal_slope_std": 0
+            "horizontal_slope_std": 100
         },
         "possible_columns_up": [
             4,
@@ -663,11 +663,11 @@
         "distance_upper_bound": 10,
         "load": {
             "vertical_mean": -20000,
-            "vertical_std": 0,
+            "vertical_std": 100,
             "horizontal_base_mean": 7000,
-            "horizontal_base_std": 0,
+            "horizontal_base_std": 500,
             "horizontal_slope_mean": 21000,
-            "horizontal_slope_std": 0
+            "horizontal_slope_std": 100
         },
         "possible_columns_up": [
             0,
@@ -776,11 +776,11 @@
         "distance_upper_bound": 10,
         "load": {
             "vertical_mean": -20000,
-            "vertical_std": 0,
+            "vertical_std": 100,
             "horizontal_base_mean": 7000,
-            "horizontal_base_std": 0,
+            "horizontal_base_std": 500,
             "horizontal_slope_mean": 21000,
-            "horizontal_slope_std": 0
+            "horizontal_slope_std": 100
         },
         "possible_columns_up": [
             0,
