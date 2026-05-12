@@ -19,8 +19,8 @@ from fea_gnn_surrogate.surrogate.train import train, validate
 EDGE_STRATEGIES = ["with_vn", "no_vn"]
 
 
-def _dataset_path(data_dir, mode, edge_strategy):
-    return os.path.join(data_dir, mode, edge_strategy, "dataset", "pyg_line_graphs.pkl")
+def _dataset_path(data_dir, edge_strategy):
+    return os.path.join(data_dir, edge_strategy, "dataset", "pyg_line_graphs.pkl")
 
 
 def main():
@@ -32,9 +32,9 @@ def main():
     parser.add_argument("--edge_strategy", type=str, default="with_vn",
                         choices=EDGE_STRATEGIES,
                         help="Edge strategy variant (default: with_vn)")
-    parser.add_argument("--test_sets", type=str, nargs="*", default=None,
-                        help="Test sets to evaluate after training (e.g. dataset_2 dataset_3). "
-                             "Uses the same edge strategy as training.")
+    parser.add_argument("--run_eval", action="store_true",
+                        help="Evaluate on the pooled test split after training. "
+                             "Uses --data_dir and --edge_strategy to locate the test dataset.")
     parser.add_argument("--data_dir", type=str, default="hf://ehsan94/fea-gnn-surrogate",
                         help="Root data directory or hf://owner/repo (default: hf://ehsan94/fea-gnn-surrogate)")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
@@ -62,7 +62,7 @@ def main():
     if args.save_path is None:
         args.save_path = f"best_model_{args.model}_{args.edge_strategy}.pth"
 
-    dataset_path = _dataset_path(args.data_dir, args.mode, args.edge_strategy)
+    dataset_path = _dataset_path(os.path.join(args.data_dir, args.mode), args.edge_strategy)
     data_list = load_dataset(dataset_path)
     print(f"Dataset: {dataset_path}")
     print(f"Dataset size: {len(data_list)}")
@@ -103,8 +103,8 @@ def main():
         model_type=args.model,
     )
 
-    # Evaluate on test sets if requested
-    if args.test_sets:
+    # Evaluate on pooled test split if requested
+    if args.run_eval:
         from fea_gnn_surrogate.surrogate.inference import load_model
         model, norm_stats = load_model(
             args.save_path, num_features,
@@ -114,16 +114,13 @@ def main():
         )
         eval_criterion = torch.nn.BCEWithLogitsLoss()
 
-        print(f"\n{'Test Set':<20}  {'Loss':>8}  {'AUC':>8}")
-        print("-" * 40)
-        for test_set in args.test_sets:
-            test_path = _dataset_path(args.data_dir, test_set, args.edge_strategy)
-            test_data = load_dataset(test_path)
-            if norm_stats is not None:
-                normalize_data(test_data, norm_stats)
-            test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
-            loss, auc, _, _, _ = validate(model, test_loader, eval_criterion)
-            print(f"  {test_set:<18}  {loss:>8.4f}  {auc:>8.4f}")
+        test_path = _dataset_path(os.path.join(args.data_dir, "test"), args.edge_strategy)
+        test_data = load_dataset(test_path)
+        if norm_stats is not None:
+            normalize_data(test_data, norm_stats)
+        test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
+        loss, auc, _, _, _ = validate(model, test_loader, eval_criterion)
+        print(f"\nTest set ({test_path}):  Loss={loss:.4f}  AUC={auc:.4f}")
 
 
 if __name__ == "__main__":
