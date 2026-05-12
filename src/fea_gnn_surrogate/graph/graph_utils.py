@@ -441,7 +441,8 @@ class GraphHandler:
         G.remove_edges_from(edges_to_remove)
         return G
 
-    def set_d_theta(self, G, U):
+    @staticmethod
+    def set_d_theta(G, U):
         U = U.reshape(-1, 3)
         U = U[:, 2]
         for node in G.nodes():
@@ -460,7 +461,8 @@ class GraphHandler:
             G.edges[edge]["def_perp_diff"] = d_max[1] - d_min[1]
         return G
 
-    def agg_deflection(self, G, Gs, deflections):
+    @staticmethod
+    def agg_deflection(G, Gs, deflections):
         for us, vs in Gs.edges():
             x1, y1 = Gs.nodes[us]["coo"]
             x2, y2 = Gs.nodes[vs]["coo"]
@@ -486,13 +488,15 @@ class GraphHandler:
                         Gs[us][vs]["deflection"] = deflections[i]
         return Gs
 
-    def max_distance_to_line(self, x, y):
+    @staticmethod
+    def max_distance_to_line(x, y):
         slope = (y[-1] - y[0]) / (x[-1] - x[0])
         intercept = y[0] - slope * x[0]
         distances = np.abs(slope * x - y + intercept) / np.sqrt(slope**2 + 1)
         return np.max(distances)
 
-    def max_distance_to_cant(self, x, y, slope_l, slop_r):
+    @staticmethod
+    def max_distance_to_cant(x, y, slope_l, slop_r):
         slope = slope_l
         intercept = y[0] - slope * x[0]
         distances = np.abs(slope * x - y + intercept) / np.sqrt(slope**2 + 1)
@@ -505,7 +509,8 @@ class GraphHandler:
 
         return np.maximum(dist1, dist2)
 
-    def calc_ver_deflection(self, Gs):
+    @staticmethod
+    def calc_ver_deflection(Gs):
         for u, v in Gs.edges():
             if "valid" not in Gs[u][v]:
                 Gs[u][v]["valid"] = True
@@ -520,17 +525,17 @@ class GraphHandler:
                 y = Gs[u][v]["deflection"][:, 1]
                 if Gs[u][v]["cant"]:
                     Gs[u][v]["normal_deflection"] = (
-                        self.max_distance_to_cant(x, y, Gs.nodes[u]["d_theta"], Gs.nodes[v]["d_theta"])
+                        GraphHandler.max_distance_to_cant(x, y, Gs.nodes[u]["d_theta"], Gs.nodes[v]["d_theta"])
                         / Gs[u][v]["dist"]
                     )
                 else:
-                    Gs[u][v]["normal_deflection"] = self.max_distance_to_line(x, y) / Gs[u][v]["dist"]
+                    Gs[u][v]["normal_deflection"] = GraphHandler.max_distance_to_line(x, y) / Gs[u][v]["dist"]
                 Gs[u][v]["valid"] = Gs[u][v]["normal_deflection"] < 1 / 2e3
 
         return Gs
 
     def calc_ver_deflections(self, G, Gs, deflections):
-        G = self.agg_deflection(G, Gs, deflections)
+        G = GraphHandler.agg_deflection(G, Gs, deflections)
         for us, vs in Gs.edges():
             x1, y1 = Gs.nodes[us]["coo"]
             x2, y2 = Gs.nodes[vs]["coo"]
@@ -560,7 +565,8 @@ class GraphHandler:
             Gs[us][vs]["valid"] = int(Gs[us][vs]["def_perp_diff"] < Gs[us][vs]["dist"] / 2e3)
         return Gs
 
-    def calc_drift(self, G, Gs, U):
+    @staticmethod
+    def calc_drift(G, Gs, U):
         U = U.reshape(-1, 3)
         U = U[:, 0]
 
