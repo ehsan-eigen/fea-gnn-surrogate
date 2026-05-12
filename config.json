@@ -1,8 +1,8 @@
 {
     "dataset_1": {
         "num_cols": 130,
-        "num_rows_range": [8, 14],
-        "transfer_row": 2,
+        "num_rows_dist": {"8": 1, "9": 1, "10": 1, "11": 1, "12": 1, "13": 1, "14": 1},
+        "transfer_row_dist": {"2": 0.6, "3": 0.3, "4": 0.1},
         "horizontal_scale": 0.25,
         "vertical_scale": 3,
         "distance_lower_bound": 2,
@@ -282,8 +282,8 @@
     },
     "dataset_2": {
         "num_cols": 130,
-        "num_rows_range": [8, 14],
-        "transfer_row": 2,
+        "num_rows_dist": {"8": 1, "9": 1, "10": 1, "11": 1, "12": 1, "13": 1, "14": 1},
+        "transfer_row_dist": {"2": 0.6, "3": 0.3, "4": 0.1},
         "horizontal_scale": 0.25,
         "vertical_scale": 3,
         "distance_lower_bound": 2,
@@ -334,8 +334,8 @@
     },
     "dataset_3": {
         "num_cols": 100,
-        "num_rows_range": [5, 11],
-        "transfer_row": 2,
+        "num_rows_dist": {"5": 1, "6": 1, "7": 1, "8": 1, "9": 1, "10": 1, "11": 1},
+        "transfer_row_dist": {"2": 0.6, "3": 0.3, "4": 0.1},
         "horizontal_scale": 0.25,
         "vertical_scale": 3,
         "distance_lower_bound": 2,
@@ -473,8 +473,8 @@
     },
     "dataset_4": {
         "num_cols": 160,
-        "num_rows_range": [6, 12],
-        "transfer_row": 2,
+        "num_rows_dist": {"6": 1, "7": 1, "8": 1, "9": 1, "10": 1, "11": 1, "12": 1},
+        "transfer_row_dist": {"2": 0.6, "3": 0.3, "4": 0.1},
         "horizontal_scale": 0.25,
         "vertical_scale": 3,
         "distance_lower_bound": 2,
@@ -655,8 +655,8 @@
     },
     "dataset_5": {
         "num_cols": 100,
-        "num_rows_range": [10, 16],
-        "transfer_row": 2,
+        "num_rows_dist": {"10": 1, "11": 1, "12": 1, "13": 1, "14": 1, "15": 1, "16": 1},
+        "transfer_row_dist": {"2": 0.6, "3": 0.3, "4": 0.1},
         "horizontal_scale": 0.25,
         "vertical_scale": 3,
         "distance_lower_bound": 2,
@@ -768,8 +768,8 @@
     },
     "dataset_6": {
         "num_cols": 160,
-        "num_rows_range": [11, 17],
-        "transfer_row": 2,
+        "num_rows_dist": {"11": 1, "12": 1, "13": 1, "14": 1, "15": 1, "16": 1, "17": 1},
+        "transfer_row_dist": {"2": 0.6, "3": 0.3, "4": 0.1},
         "horizontal_scale": 0.25,
         "vertical_scale": 3,
         "distance_lower_bound": 2,

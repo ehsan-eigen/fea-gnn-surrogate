@@ -39,13 +39,17 @@ def generate_samples(config_path, datasets=None, num_episodes=1000,
         conf = configs[np.random.randint(len(configs))]
         graph_handler = GraphHandler(conf)
 
-        # Vary transfer_row: 2 most likely, 3 less, 4 least
-        graph_handler.transfer_row = np.random.choice(
-            [2, 3, 4], p=[0.6, 0.3, 0.1]
-        )
-        # Vary num_rows: uniform within config range
-        lo, hi = conf["num_rows_range"]
-        graph_handler.num_rows = np.random.randint(lo, hi + 1)
+        tr_dist = conf["transfer_row_dist"]
+        tr_values = [int(k) for k in tr_dist.keys()]
+        tr_probs = np.array(list(tr_dist.values()), dtype=float)
+        tr_probs /= tr_probs.sum()
+        graph_handler.transfer_row = int(np.random.choice(tr_values, p=tr_probs))
+
+        nr_dist = conf["num_rows_dist"]
+        nr_values = [int(k) for k in nr_dist.keys()]
+        nr_probs = np.array(list(nr_dist.values()), dtype=float)
+        nr_probs /= nr_probs.sum()
+        graph_handler.num_rows = int(np.random.choice(nr_values, p=nr_probs))
 
         graph_handler.sample_load_params()
         G = graph_handler.generate_graph()
