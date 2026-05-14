@@ -112,7 +112,7 @@ def main():
             model_type=args.model, heads=args.heads,
             dropout=args.dropout, attn_dropout=args.attn_dropout,
         )
-        eval_criterion = torch.nn.BCEWithLogitsLoss()
+        eval_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
         test_path = _dataset_path(os.path.join(args.data_dir, "test"), args.edge_strategy)
         test_data = load_dataset(test_path)
