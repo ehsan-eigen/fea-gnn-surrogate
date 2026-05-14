@@ -60,6 +60,8 @@ examples:
     parser.add_argument("--no_save_graphs", action="store_true",
                         help="Do not save raw and simplified NetworkX graphs to disk "
                              "(they are saved by default for visualization in Stage 3)")
+    parser.add_argument("--concurrency", type=int, default=1,
+                        help="Number of samples to generate in parallel (default: 1 = sequential)")
     parser.add_argument("--hf_repo", type=str, default=None,
                         help="Hugging Face dataset repo to upload datasets to. "
                              "If not set, no upload is performed. Reads HF_TOKEN from environment.")
@@ -82,6 +84,7 @@ examples:
         visualize=args.visualize,
         save_graphs=save_graphs,
         output_dir=args.output_dir,
+        concurrency=args.concurrency,
     )
 
     has_label = not args.skip_fea
