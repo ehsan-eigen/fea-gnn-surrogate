@@ -23,6 +23,17 @@ Assume we want to assess the stability of a frame structure under the following 
 
 In the above image, beams and columns that do not meet the stability criteria are colored red (invalid elements). The blue elements are considered valid. A structure is valid if and only if all its elements are valid (i.e., the deflection of beams and drift of columns are within the specified thresholds).
 
+## Stability Criteria
+
+An element is labelled **valid** (`y=1`) if it satisfies:
+
+- **Beam vertical deflection:** normalised deflection < L / 2000, where L is the span length
+- **Column lateral drift:** inter-storey drift < H / 500, where H is the storey height
+
+A structure is considered valid only if **all** of its elements are valid.
+
+---
+
 ## Key aspects of this problem:
 
 1. **Validation Threshold:** We predict whether deformation stays within code-specified limits (not the exact value), since structural engineers care about pass/fail, not precise magnitudes.
@@ -203,87 +214,7 @@ Each section has these fields:
 
 ## CLI Reference
 
-### generate_dataset.py
-
-| Argument | Default | Description |
-|---|---|---|
-| `--mode` | `train` | Generation mode: `train` or `test` |
-| `--datasets` | training defaults | Dataset keys from `config.json` (`dataset_1` through `dataset_6`) |
-| `--num_samples` | `1000` | Number of structures to generate |
-| `--config` | `config.json` | Path to the configuration file |
-| `--output_dir` | `data` | Root output directory |
-| `--output_label` | value of `--mode` | Subdirectory label under output_dir |
-| `--output_name` | `pyg_line_graphs.pkl` | Filename for the saved PyG dataset |
-| `--visualize` | off | Save a deflection plot for each structure |
-| `--skip_fea` | off | Skip FEA (no labels — cannot train) |
-| `--no_save_graphs` | off | Skip saving raw/simplified NetworkX graphs |
-| `--concurrency` | `1` | Number of samples to generate in parallel |
-| `--hf_repo` | none | Hugging Face dataset repo to upload to (reads `HF_TOKEN`) |
-
-Always saves base NX line graphs to `data/{mode}/base/` alongside the PyG variants.
-
-### extract_features.py
-
-Re-extract PyG features from saved base NX line graphs. Use this when changing features — avoids re-running FEA.
-
-| Argument | Default | Description |
-|---|---|---|
-| `--mode` | `train` | Config section (must match a previous `generate_dataset.py` run) |
-| `--data_dir` | `data` | Root data directory |
-| `--output_name` | `pyg_line_graphs.pkl` | Filename for the saved PyG dataset |
-| `--skip_fea` | off | Set if the base graphs have no labels (generated with `--skip_fea`) |
-
-### train_surrogate.py
-
-| Argument | Default | Description |
-|---|---|---|
-| `--mode` | `train` | Data subdirectory for training data |
-| `--model` | `mpnn` | Model architecture: `mpnn` (SharedMPNN) or `gps` (GPS Transformer) |
-| `--edge_strategy` | `with_vn` | `with_vn` or `no_vn` |
-| `--run_eval` | off | Evaluate on the pooled test set after training |
-| `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
-| `--epochs` | `100` | Training epochs |
-| `--batch_size` | `32` | Mini-batch size |
-| `--hidden_dim` | `18` | Hidden dimension |
-| `--mp_steps` | `3` | Shared message-passing steps (MPNN) or GPS layers (GPS) |
-| `--heads` | `3` | Attention heads — GPS only; `hidden_dim` must be divisible by `heads` |
-| `--dropout` | `0.2` | Dropout rate — GPS only |
-| `--attn_dropout` | `0.2` | Attention dropout rate — GPS only |
-| `--lr` | `0.01` | Learning rate |
-| `--test_size` | `0.3` | Validation split ratio |
-| `--save_path` | `best_model_<model>_<edge_strategy>.pth` | Model checkpoint path |
-| `--log_dir` | `./logs/` | TensorBoard log directory |
-| `--hf_repo` | none | Hugging Face model repo to upload trained model to (reads `HF_TOKEN`) |
-
-### evaluate_model.py
-
-| Argument | Default | Description |
-|---|---|---|
-| `--model_path` | `best_model_<model>_<edge_strategy>.pth` | Path to trained model checkpoint; accepts `hf://owner/repo/file.pth` |
-| `--model` | `mpnn` | Model architecture: `mpnn` or `gps` |
-| `--test_sets` | (required) | Test set names (e.g. `test`) |
-| `--edge_strategy` | `with_vn` | Edge strategy variant |
-| `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
-| `--hidden_dim` | `18` | Must match training |
-| `--mp_steps` | `3` | Must match training |
-| `--heads` | `3` | Must match training (GPS only) |
-| `--dropout` | `0.2` | Must match training (GPS only) |
-| `--attn_dropout` | `0.2` | Must match training (GPS only) |
-| `--batch_size` | `32` | Batch size for evaluation |
-
-### run_inference.py
-
-| Argument | Default | Description |
-|---|---|---|
-| `--edge_strategy` | `with_vn` | Edge strategy variant |
-| `--model` | `mpnn` | Model architecture: `mpnn` or `gps` |
-| `--model_path` | `best_model_<model>_<edge_strategy>.pth` | Model checkpoint path |
-| `--data_dir` | `data/test` | Data directory containing edge strategy subdirs |
-| `--top_stability` | `15` | Top-K by predicted validity |
-| `--top_weight` | `15` | Top-K lightest from those |
-| `--output_dir` | `top_structs` | Deflection plot output directory |
-| `--hidden_dim` | `18` | Must match training |
-| `--mp_steps` | `3` | Must match training |
+See [CLI_REFERENCE.md](CLI_REFERENCE.md) for the full argument reference for all scripts.
 
 ---
 
@@ -353,57 +284,6 @@ fea-gnn-surrogate/
 │
 └── tests/
     └── __init__.py
-```
-
----
-
-## Stability Criteria
-
-An element is labelled **valid** (`y=1`) if it satisfies:
-
-- **Beam vertical deflection:** normalised deflection < L / 2000, where L is the span length
-- **Column lateral drift:** inter-storey drift < H / 500, where H is the storey height
-
-A structure is considered valid only if **all** of its elements are valid.
-
----
-
-## Programmatic API
-
-```python
-from fea_gnn_surrogate.generate import generate_samples
-from fea_gnn_surrogate.graph.graph_utils import GraphHandler
-from fea_gnn_surrogate.surrogate.inference import load_model, predict, rank_structures
-from fea_gnn_surrogate.surrogate.dataset import load_dataset, normalize_data
-
-# Generate 100 training samples — returns a list of NetworkX line graphs
-line_graphs = generate_samples(
-    config_path="config.json", mode="train", num_episodes=100
-)
-
-# Save base NX line graphs (topology + attributes) — re-use when features change
-GraphHandler.save_base_line_graphs(line_graphs, "data/train/base", "line_graphs.pkl")
-
-# Extract PyG features and save both edge-strategy variants
-GraphHandler.save_pyg_line_graphs(
-    line_graphs, "data/train/with_vn/dataset", "pyg_line_graphs.pkl",
-    use_virtual_node=True,
-)
-GraphHandler.save_pyg_line_graphs(
-    line_graphs, "data/train/no_vn/dataset", "pyg_line_graphs.pkl",
-    use_virtual_node=False,
-)
-
-# Load a test dataset and run inference (local path or hf:// URI both work)
-test_data = load_dataset("hf://ehsan94/fea-gnn-surrogate/test/with_vn/dataset/pyg_line_graphs.pkl")
-
-model, norm_stats = load_model("hf://ehsan94/fea-gnn-surrogate/best_model_mpnn_with_vn.pth", num_features=25)
-if norm_stats:
-    normalize_data(test_data, norm_stats)
-
-results = predict(model, test_data)
-df = rank_structures(results)
-print(df)
 ```
 
 ---
