@@ -57,6 +57,10 @@ Looking at a single edge from a sample graph:
 | `col_l2r_ratio` | 0.0077 | Relative horizontal position |
 | `step_size` | 0.05 | FEA mesh resolution (m) |
 | `real` | True | Whether this is a physical edge (vs. artificial) |
+| `load_axial_i` | -5000 | Axial load component at node i |
+| `load_transverse_i` | 1200 | Transverse load component at node i |
+| `load_axial_j` | -5000 | Axial load component at node j |
+| `load_transverse_j` | 1200 | Transverse load component at node j |
 | `valid` | True | Ground truth label |
 | `normal_deflection` | 3.44e-06 | Actual normal deflection |
 | `drift` | 0 | Actual lateral drift |
@@ -85,13 +89,13 @@ The model is intentionally minimal:
 
 ```
 SharedMPNN(
-  (conv0): Linear(13 -> 18)       # Project 13 input features to hidden dim
+  (conv0): Linear(25 -> 18)       # Project 25 input features to hidden dim
   (conv1): GraphConv(18, 18)       # Single shared message passing layer
   (fc2):   Linear(18 -> 1)         # Output logit per node
 )
 ```
 
-1. **Linear projection** — maps the 13 input features to `hidden_dim` (18).
+1. **Linear projection** — maps the 25 input features (17 structural + 8 Laplacian PE) to `hidden_dim` (18).
 2. **Shared GraphConv** — a single `GraphConv` layer applied `num_message_passing_steps` (3) times with **the same weights** each time.
 3. **Linear readout** — maps hidden representations to 1 logit per node (element), passed through sigmoid for binary classification.
 
@@ -147,9 +151,9 @@ Graph Transformers use **self-attention** as an all-to-all message passing mecha
 
 | Approach | Pros | Cons |
 |---|---|---|
-| SharedMPNN + virtual node | Tiny model, works with 100 samples, best-calibrated predictions | Less expressive than attention |
-| SharedMPNN + no edges | Simplest graph, no artificial nodes | Relies entirely on positional encodings for long-range |
-| GPS Graph Transformer | Learns long-range interactions, highest AUC on out-of-distribution test sets | More parameters; prone to overfitting — higher test loss despite lower validation loss |
+| SharedMPNN + virtual node | Tiny model, best-calibrated predictions (AUC 0.9839, loss 0.0491) | Less expressive than attention |
+| SharedMPNN + no edges | Simplest graph, no artificial nodes | Relies entirely on positional encodings for long-range (AUC 0.9740) |
+| GPS Graph Transformer | Learns long-range interactions, lowest validation loss | More parameters; slightly higher test loss despite lower validation loss |
 
 ---
 
@@ -157,4 +161,4 @@ Graph Transformers use **self-attention** as an all-to-all message passing mecha
 
 The SharedMPNN architecture is a sound choice for this constrained problem: weight sharing prevents overfitting on a small dataset, and repeated message passing extends the receptive field. Long-range dependencies are handled through the virtual node, Laplacian positional encodings, or the GPS Graph Transformer — all of which avoid hand-crafted domain edges and generalize to new structure families without expert redesign.
 
-With variable loads (sampled from distributions rather than fixed values), SharedMPNN with virtual node produces the best-calibrated predictions (lowest test loss) while GPS achieves slightly higher AUC but significantly higher test loss — evidence that its extra parameters overfit the training distribution. The weight-sharing constraint in SharedMPNN acts as a strong regularizer that becomes increasingly valuable when the input distribution is broadened by load variation.
+With variable loads (sampled from distributions rather than fixed values) and load features included as model inputs (25 features total), SharedMPNN with virtual node produces the best-calibrated predictions (test AUC 0.9839, test loss 0.0491) while GPS achieves competitive AUC (0.9797) but slightly higher test loss despite having the lowest validation loss — evidence that its extra parameters still overfit slightly compared to SharedMPNN's weight-sharing constraint.

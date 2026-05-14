@@ -29,7 +29,7 @@ In the above image, beams and columns that do not meet the stability criteria ar
 
 2. **Multiple Loads:** The structure is subjected to both vertical (SDL) and lateral (wind) loads simultaneously.
 
-3. **Scoped Generalization:** A fully general surrogate for arbitrary frame geometries is intractable — it would require billions of samples. Instead, we focus on a specific family: grid-layout RC frames with two basement levels and up to 11 above-ground residential levels, where the basement column layout may differ from the upper levels (requiring transfer beams at the first floor).
+3. **Scoped Generalization:** A fully general surrogate for arbitrary frame geometries is intractable — it would require billions of samples. Instead, we focus on a specific family: grid-layout RC frames with basement levels and above-ground residential levels, where the basement column layout may differ from the upper levels (requiring transfer beams). The training set is drawn from multiple building configurations (`dataset_1` through `dataset_6` in `config.json`) to cover a range of widths, heights, and column layouts.
 
 ---
 
@@ -56,9 +56,10 @@ Raw cross-section dimensions are replaced by features grounded in structural mec
 | **Transfer beam flag** | Identifies elements carrying redistributed column loads |
 | **Cantilever flag** | Flags elements with a free end (high deflection risk) |
 | **Level & position ratios** | Encode location in the load path |
+| **Load projections** | Axial and transverse load components at each endpoint, projected along the element axis — encode the force environment |
 | **Laplacian PE (k=8)** | Spectral coordinates from the normalized graph Laplacian — encode each element's position within the load-path topology |
 
-Each node in the line graph has 21 features (13 structural + 8 Laplacian positional encoding). Feature names and normalization targets are defined in `graph_utils.py` as `FEATURE_NAMES`, `NORM_COLUMN_FEATURES`, and `NORM_BEAM_FEATURES`.
+Each node in the line graph has 25 features (17 structural + 8 Laplacian positional encoding). Feature names and normalization targets are defined in `graph_utils.py` as `FEATURE_NAMES`, `NORM_COLUMN_FEATURES`, `NORM_BEAM_FEATURES`, and `NORM_LOAD_FEATURES`.
 
 ### 3. Shared-Weight Message Passing (SharedMPNN)
 
@@ -109,101 +110,94 @@ export HF_TOKEN=your_token_here
 ### 1. Generate data
 
 ```bash
-# Training data (1000 structures) — saved locally and uploaded to Hugging Face
-python scripts/generate_dataset.py --mode train --num_samples 1000
+# Training data (2000 structures from 5 configs) — saved locally
+python scripts/generate_dataset.py --datasets dataset_1 dataset_3 dataset_4 dataset_5 dataset_6 \
+    --num_samples 2000 --mode train --concurrency 8
 
-# Test data
-python scripts/generate_dataset.py --mode test_1 --num_samples 500
-python scripts/generate_dataset.py --mode test_2 --num_samples 500
+# Test data (from a held-out config)
+python scripts/generate_dataset.py --datasets dataset_2 --num_samples 200 --mode test --concurrency 4
 ```
 
 Each run:
-- Generates structures, runs FEA, and saves raw NetworkX line graphs to `data/{mode}/base/` (the **base dataset** — topology + attributes, no feature extraction)
+- Generates structures by sampling from the specified dataset configs, runs FEA, and saves raw NetworkX line graphs to `data/{mode}/base/` (the **base dataset** — topology + attributes, no feature extraction)
 - Extracts PyG features and saves two edge-strategy variants (`with_vn`, `no_vn`) from the same structures
 
-By default the generated `.pkl` files are uploaded to the `ehsan94/fea-gnn-surrogate` Hugging Face dataset repository (requires `HF_TOKEN`). Pass `--hf_repo ""` to skip the upload.
+Pass `--hf_repo ehsan94/fea-gnn-surrogate` to upload the generated `.pkl` files to Hugging Face (requires `HF_TOKEN`).
 
 **Changing features without re-running FEA:** If you modify feature extraction (e.g. add or remove a feature), you can re-extract from the saved base data without regenerating structures or re-running FEA:
 
 ```bash
 python scripts/extract_features.py --mode train
-python scripts/extract_features.py --mode test_1
+python scripts/extract_features.py --mode test
 ```
 
 ### 2. Train
 
 ```bash
 # SharedMPNN (default)
-python scripts/train_surrogate.py --mode train --edge_strategy with_vn --epochs 100
+python scripts/train_surrogate.py --model mpnn --edge_strategy with_vn --epochs 50 --run_eval
 
 # GPS Graph Transformer — no artificial edges needed
-python scripts/train_surrogate.py --mode train --model gps --edge_strategy no_vn --epochs 100
+python scripts/train_surrogate.py --model gps --edge_strategy no_vn --epochs 20 \
+    --hidden_dim 18 --mp_steps 3 --dropout 0.5 --run_eval
 ```
 
 Training data is loaded from Hugging Face by default (`hf://ehsan94/fea-gnn-surrogate`). To use a local directory instead, pass `--data_dir data`.
 
-The best model is saved to `best_model_<edge_strategy>.pth` and uploaded to the Hugging Face model repository specified by `--hf_repo` (requires `HF_TOKEN`). To also report test metrics after training:
-
-```bash
-python scripts/train_surrogate.py --mode train --model gps --edge_strategy no_vn --epochs 100 \
-    --test_sets test_1 test_2 test_3
-```
+The best model is saved to `best_model_<model>_<edge_strategy>.pth`. Pass `--hf_repo ehsan94/fea-gnn-surrogate` to upload to Hugging Face (requires `HF_TOKEN`). The `--run_eval` flag evaluates on the pooled test set after training.
 
 ### 3. Evaluate on test sets
 
 ```bash
-python scripts/evaluate_model.py --model_path best_model_with_vn.pth \
-    --test_sets test_1 test_2
+python scripts/evaluate_model.py --model_path best_model_mpnn_with_vn.pth \
+    --test_sets test
 ```
 
 Test data is loaded from Hugging Face by default. Both `--model_path` and `--data_dir` accept `hf://owner/repo` paths:
 
 ```bash
 python scripts/evaluate_model.py \
-    --model_path hf://ehsan94/fea-gnn-surrogate/best_model_with_vn.pth \
-    --test_sets test_1 test_2
+    --model_path hf://ehsan94/fea-gnn-surrogate/best_model_mpnn_with_vn.pth \
+    --test_sets test
 ```
 
 Output:
 
 ```
-Model:  best_model_with_vn.pth
+Model:  best_model_mpnn_with_vn.pth
 Test Set              Loss       AUC
 ----------------------------------------
-  test_1              0.2265    0.9724
-  test_2              0.0717    0.9939
+  test                0.0491    0.9839
 ```
 
 ### 4. Inference — rank structures
 
 ```bash
-python scripts/run_inference.py --test_name test_1
+python scripts/run_inference.py --data_dir data/test
 ```
 
-This loads the model matching the edge strategy (default: `best_model_with_vn.pth`), ranks test structures by predicted validity, runs FEA on the top candidates, and saves deflection plots.
+This loads the model matching the edge strategy (default: `best_model_mpnn_with_vn.pth`), ranks test structures by predicted validity, runs FEA on the top candidates, and saves deflection plots.
 
 ---
 
 ## Configuration
 
-`config.json` defines the building geometry for each dataset. It contains these sections:
-
-- `train` — the training layout (all column positions available, storey count randomised during generation)
-- `test_1` through `test_5` — five different test layouts with specific column positions
+`config.json` defines the building geometry for each dataset configuration. It contains six dataset sections (`dataset_1` through `dataset_6`), each representing a different building family with distinct grid widths, storey ranges, and column layouts. During generation, the `--datasets` flag selects which configs to sample from and `--mode` determines whether data is saved as `train` or `test`.
 
 Each section has these fields:
 
 | Field | Meaning |
 |---|---|
 | `num_cols` | Grid width (number of column positions) |
-| `num_rows` | Number of storeys (randomised +-3 during training) |
-| `transfer_row` | Storey index of the transfer slab |
+| `num_rows_dist` | Distribution over number of storeys (sampled per structure) |
+| `transfer_row_dist` | Distribution over transfer slab position |
 | `horizontal_scale` | Bay width in metres per grid unit |
 | `vertical_scale` | Storey height in metres |
 | `possible_columns_up` | Candidate column positions above the transfer slab |
 | `possible_columns_down` | Candidate column positions below the transfer slab |
 | `distance_lower_bound` | Minimum allowable column spacing (metres) |
 | `distance_upper_bound` | Maximum allowable span (metres) |
+| `load` | Load distribution parameters (vertical/horizontal means and standard deviations) |
 
 ---
 
@@ -213,15 +207,18 @@ Each section has these fields:
 
 | Argument | Default | Description |
 |---|---|---|
-| `--mode` | `train` | Config section: `train`, `test_1`–`test_5` |
+| `--mode` | `train` | Generation mode: `train` or `test` |
+| `--datasets` | training defaults | Dataset keys from `config.json` (`dataset_1` through `dataset_6`) |
 | `--num_samples` | `1000` | Number of structures to generate |
 | `--config` | `config.json` | Path to the configuration file |
 | `--output_dir` | `data` | Root output directory |
+| `--output_label` | value of `--mode` | Subdirectory label under output_dir |
 | `--output_name` | `pyg_line_graphs.pkl` | Filename for the saved PyG dataset |
 | `--visualize` | off | Save a deflection plot for each structure |
 | `--skip_fea` | off | Skip FEA (no labels — cannot train) |
 | `--no_save_graphs` | off | Skip saving raw/simplified NetworkX graphs |
-| `--hf_repo` | `ehsan94/fea-gnn-surrogate` | Hugging Face dataset repo to upload to (reads `HF_TOKEN`); pass `""` to skip |
+| `--concurrency` | `1` | Number of samples to generate in parallel |
+| `--hf_repo` | none | Hugging Face dataset repo to upload to (reads `HF_TOKEN`) |
 
 Always saves base NX line graphs to `data/{mode}/base/` alongside the PyG variants.
 
@@ -240,10 +237,10 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 
 | Argument | Default | Description |
 |---|---|---|
-| `--mode` | `train` | Config section for training data |
+| `--mode` | `train` | Data subdirectory for training data |
 | `--model` | `mpnn` | Model architecture: `mpnn` (SharedMPNN) or `gps` (GPS Transformer) |
 | `--edge_strategy` | `with_vn` | `with_vn` or `no_vn` |
-| `--test_sets` | none | Test sets to evaluate after training (e.g. `test_1 test_2`) |
+| `--run_eval` | off | Evaluate on the pooled test set after training |
 | `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--epochs` | `100` | Training epochs |
 | `--batch_size` | `32` | Mini-batch size |
@@ -254,16 +251,17 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 | `--attn_dropout` | `0.2` | Attention dropout rate — GPS only |
 | `--lr` | `0.01` | Learning rate |
 | `--test_size` | `0.3` | Validation split ratio |
-| `--save_path` | `best_model_<edge_strategy>.pth` | Model checkpoint path |
+| `--save_path` | `best_model_<model>_<edge_strategy>.pth` | Model checkpoint path |
 | `--log_dir` | `./logs/` | TensorBoard log directory |
-| `--hf_repo` | `ehsan94/fea-gnn-surrogate` | Hugging Face model repo to upload trained model to (reads `HF_TOKEN`) |
+| `--hf_repo` | none | Hugging Face model repo to upload trained model to (reads `HF_TOKEN`) |
 
 ### evaluate_model.py
 
 | Argument | Default | Description |
 |---|---|---|
-| `--model_path` | `best_model_<edge_strategy>.pth` | Path to trained model checkpoint; accepts `hf://owner/repo/file.pth` |
-| `--test_sets` | (required) | Test set names (e.g. `test_1 test_2`) |
+| `--model_path` | `best_model_<model>_<edge_strategy>.pth` | Path to trained model checkpoint; accepts `hf://owner/repo/file.pth` |
+| `--model` | `mpnn` | Model architecture: `mpnn` or `gps` |
+| `--test_sets` | (required) | Test set names (e.g. `test`) |
 | `--edge_strategy` | `with_vn` | Edge strategy variant |
 | `--data_dir` | `hf://ehsan94/fea-gnn-surrogate` | Root data directory or `hf://owner/repo` |
 | `--hidden_dim` | `18` | Must match training |
@@ -277,10 +275,10 @@ Re-extract PyG features from saved base NX line graphs. Use this when changing f
 
 | Argument | Default | Description |
 |---|---|---|
-| `--test_name` | (required) | Test case name (e.g. `test_1`) |
 | `--edge_strategy` | `with_vn` | Edge strategy variant |
-| `--model_path` | `best_model_<edge_strategy>.pth` | Model checkpoint path |
-| `--data_dir` | `data` | Root data directory |
+| `--model` | `mpnn` | Model architecture: `mpnn` or `gps` |
+| `--model_path` | `best_model_<model>_<edge_strategy>.pth` | Model checkpoint path |
+| `--data_dir` | `data/test` | Data directory containing edge strategy subdirs |
 | `--top_stability` | `15` | Top-K by predicted validity |
 | `--top_weight` | `15` | Top-K lightest from those |
 | `--output_dir` | `top_structs` | Deflection plot output directory |
@@ -298,26 +296,26 @@ Each generation run produces two graph representations of the **same** structure
 | **`with_vn`** | Global shared virtual node connected to all elements — every element is exactly 2 hops from every other |
 | **`no_vn`** | No artificial edges; pure local message passing (baseline) |
 
-### Experimental results (with Laplacian PE, k=8, variable load)
+### Experimental results (25 features, Laplacian PE k=8, variable load, 2000 training samples)
 
-Training uses variable loads: vertical and horizontal forces are sampled from distributions (see `load` section in `config.json`) rather than fixed values. This makes the surrogate robust to load variation but also increases the effective complexity of the learning task.
+Training uses variable loads: vertical and horizontal forces are sampled from distributions (see `load` section in `config.json`) rather than fixed values. The training set is drawn from 5 dataset configs (`dataset_1`, `dataset_3`–`dataset_6`) covering a range of building widths and heights. The test set uses a held-out config (`dataset_2`) with a different column layout.
 
 #### SharedMPNN
 
-| Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
-|---|---|---|---|---|---|---|
-| No edges (baseline) | 0.9814 | 0.1713 | 0.9978 | 0.0524 | 0.9986 | 0.0573 |
-| Virtual node | **0.9835** | **0.1478** | **0.9979** | **0.0448** | **0.9989** | **0.0309** |
+| Variant | Test AUC | Test Loss | Val Loss |
+|---|---|---|---|
+| No edges (baseline) | 0.9740 | 0.0583 | 0.0531 |
+| Virtual node | **0.9839** | **0.0491** | **0.0424** |
 
-With Laplacian positional encoding, both SharedMPNN variants perform similarly in AUC. The virtual node variant achieves lower test losses, particularly on test_3. The spectral coordinates capture each element's position within the load-path topology, which was previously the main benefit of virtual nodes.
+The virtual node variant achieves the best overall test AUC (0.9839) and lowest test loss (0.0491). With load features included, the model benefits from both Laplacian positional encoding and the virtual node's 2-hop shortcut for long-range communication.
 
 #### GPS Graph Transformer
 
-| Variant | Test 1 AUC | Test 1 Loss | Test 2 AUC | Test 2 Loss | Test 3 AUC | Test 3 Loss |
-|---|---|---|---|---|---|---|
-| GPS (no edges) | **0.9881** | 0.2287 | 0.9983 | 0.1102 | 0.9986 | 0.1154 |
+| Variant | Test AUC | Test Loss | Val Loss |
+|---|---|---|---|
+| GPS (no edges) | 0.9797 | 0.0514 | 0.0363 |
 
-GPS is trained on the plain line graph (`no_vn`) — no virtual node needed. Global self-attention replaces all hand-crafted long-range connections. GPS achieves the highest AUC on test_1 (0.9881), but its test losses are significantly higher than the SharedMPNN variants despite having the lowest validation loss (0.0130 vs 0.0154 for MPNN with_vn). This gap between validation and test performance indicates overfitting: the additional parameters in the attention mechanism fit noise in the training distribution rather than learning more generalizable patterns. SharedMPNN's weight-sharing constraint acts as a stronger regularizer, producing better-calibrated predictions on unseen geometries.
+GPS is trained on the plain line graph (`no_vn`) — no virtual node needed. Global self-attention replaces all hand-crafted long-range connections. GPS achieves competitive AUC (0.9797) and the lowest validation loss (0.0363), but its test loss is slightly higher than SharedMPNN with virtual node. This gap between validation and test performance suggests the attention mechanism still overfits slightly compared to SharedMPNN's weight-sharing constraint.
 
 ---
 
@@ -397,9 +395,9 @@ GraphHandler.save_pyg_line_graphs(
 )
 
 # Load a test dataset and run inference (local path or hf:// URI both work)
-test_data = load_dataset("hf://ehsan94/fea-gnn-surrogate/test_1/with_vn/dataset/pyg_line_graphs.pkl")
+test_data = load_dataset("hf://ehsan94/fea-gnn-surrogate/test/with_vn/dataset/pyg_line_graphs.pkl")
 
-model, norm_stats = load_model("hf://ehsan94/fea-gnn-surrogate/best_model_with_vn.pth", num_features=21)
+model, norm_stats = load_model("hf://ehsan94/fea-gnn-surrogate/best_model_mpnn_with_vn.pth", num_features=25)
 if norm_stats:
     normalize_data(test_data, norm_stats)
 
