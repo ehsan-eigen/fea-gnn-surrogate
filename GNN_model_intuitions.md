@@ -147,13 +147,25 @@ Instead of altering the graph topology, encode structural properties as addition
 
 Graph Transformers use **self-attention** as an all-to-all message passing mechanism. Every node can attend to every other node, so the model can learn which distant nodes matter. The GPS architecture (Rampasek et al., 2022) combines local GINConv layers with global transformer attention, getting the best of both worlds. Used via `--model gps --edge_strategy no_vn`.
 
+### 4. Graphormer (standard global-attention baseline)
+
+Graphormer (Ying et al., 2021) is a pure transformer with no local convolution branch. It uses two structural encodings:
+
+- **Centrality encoding:** separate learnable in-degree and out-degree embeddings added to node features.
+- **Spatial encoding:** for every pair of nodes, the shortest-path distance is mapped through a learnable per-head bias and added to the attention scores. Unreachable pairs use a dedicated bucket.
+
+The third encoding from the paper (edge encoding along shortest paths) is omitted because the line-graph dataset has no edge attributes.
+
+Graphormer is included as a **baseline for future physics-informed attention experiments**: the shortest-path bias is a purely topological signal. Future work will replace it with bias functions grounded in structural mechanics — diffusion on a stiffness-weighted graph, random walk / PageRank, effective resistance — and test whether biases aligned with load-path physics outperform shortest-path distance. The `attn_bias` module is exposed as a constructor argument to make this swap a one-line change. Used via `--model graphormer --edge_strategy no_vn`.
+
 ### Comparison Summary
 
 | Approach | Pros | Cons |
 |---|---|---|
 | SharedMPNN + virtual node | Tiny model, best-calibrated predictions (AUC 0.9839, loss 0.0491) | Less expressive than attention |
 | SharedMPNN + no edges | Simplest graph, no artificial nodes | Relies entirely on positional encodings for long-range (AUC 0.9740) |
-| GPS Graph Transformer | Learns long-range interactions, lowest validation loss | More parameters; slightly higher test loss despite lower validation loss |
+| GPS Graph Transformer | Learns long-range interactions, lowest validation loss (0.0363) | More parameters; slightly higher test loss (0.0514) despite lower validation loss |
+| Graphormer (SPD bias) | Clean global attention with structural inductive bias; tighter val/test gap than GPS (AUC 0.9802, loss 0.0509); baseline for physics-informed bias experiments | Purely topological spatial bias — does not yet exploit structural mechanics |
 
 ---
 
@@ -161,4 +173,4 @@ Graph Transformers use **self-attention** as an all-to-all message passing mecha
 
 The SharedMPNN architecture is a sound choice for this constrained problem: weight sharing prevents overfitting on a small dataset, and repeated message passing extends the receptive field. Long-range dependencies are handled through the virtual node, Laplacian positional encodings, or the GPS Graph Transformer — all of which avoid hand-crafted domain edges and generalize to new structure families without expert redesign.
 
-With variable loads (sampled from distributions rather than fixed values) and load features included as model inputs (25 features total), SharedMPNN with virtual node produces the best-calibrated predictions (test AUC 0.9839, test loss 0.0491) while GPS achieves competitive AUC (0.9797) but slightly higher test loss despite having the lowest validation loss — evidence that its extra parameters still overfit slightly compared to SharedMPNN's weight-sharing constraint.
+With variable loads (sampled from distributions rather than fixed values) and load features included as model inputs (25 features total), SharedMPNN with virtual node produces the best-calibrated predictions (test AUC 0.9839, test loss 0.0491) while the two transformer baselines — GPS (AUC 0.9797, loss 0.0514) and Graphormer with shortest-path spatial bias (AUC 0.9802, loss 0.0509) — sit just below it. Graphormer is the reference point for the next stage of this project: replacing its topological shortest-path attention bias with physics-informed kernels (diffusion, random walk, effective resistance on a stiffness-weighted graph) to test whether biases aligned with structural mechanics outperform purely topological ones.

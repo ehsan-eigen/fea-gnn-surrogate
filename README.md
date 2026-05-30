@@ -87,6 +87,19 @@ This eliminates the need for artificial edges (e.g. virtual node) to propagate l
 
 Select the GPS architecture with `--model gps` when training.
 
+### 5. Graphormer (Standard Global-Attention Baseline)
+
+A second global-attention baseline implementing the standard **Graphormer** (Ying et al., NeurIPS 2021). The model is pure transformer (no local convolution branch) with two structural encodings injected into attention:
+
+- **Centrality encoding:** separate learnable in-degree and out-degree embeddings added to projected node features
+- **Spatial encoding:** per-head learnable bias indexed by the shortest-path distance between every pair of nodes, added to attention scores
+
+The third encoding from the original paper (edge encoding along shortest paths) is omitted because the line-graph dataset has no edge attributes.
+
+This model serves as the reference point for future experiments that swap the shortest-path spatial bias for **physics-informed kernels** (diffusion on a stiffness-weighted graph, random-walk / PageRank, effective resistance) — to test whether attention biases aligned with structural mechanics outperform purely topological ones. The `ShortestPathBias` module is exposed as a pluggable `attn_bias` argument for that purpose.
+
+Select with `--model graphormer --edge_strategy no_vn`.
+
 ---
 
 ### Read more
@@ -247,6 +260,14 @@ The virtual node variant achieves the best overall test AUC (0.9839) and lowest 
 | GPS (no edges) | 0.9797 | 0.0514 | 0.0363 |
 
 GPS is trained on the plain line graph (`no_vn`) — no virtual node needed. Global self-attention replaces all hand-crafted long-range connections. GPS achieves competitive AUC (0.9797) and the lowest validation loss (0.0363), but its test loss is slightly higher than SharedMPNN with virtual node. This gap between validation and test performance suggests the attention mechanism still overfits slightly compared to SharedMPNN's weight-sharing constraint.
+
+#### Graphormer (standard global-attention baseline)
+
+| Variant | Test AUC | Test Loss | Val Loss |
+|---|---|---|---|
+| Graphormer (no edges, SPD spatial bias) | 0.9802 | 0.0509 | 0.0458 |
+
+Trained on the plain line graph (`no_vn`) with shortest-path-distance spatial bias and degree-based centrality encoding. Graphormer matches GPS on test AUC (0.9802 vs 0.9797) with a slightly lower test loss (0.0509 vs 0.0514), and has a closer val/test gap (0.0458 vs 0.0363) than GPS — suggesting that the structural inductive bias from SPD-indexed attention regularizes the model better than GPS's local–global hybrid on this dataset. SharedMPNN with virtual node still leads overall (AUC 0.9839, loss 0.0491). Graphormer is the reference point for future experiments that swap the SPD bias for physics-informed kernels.
 
 ---
 
