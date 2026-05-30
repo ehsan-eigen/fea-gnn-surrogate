@@ -62,9 +62,11 @@ def validate(model, dataloader, criterion):
 
 def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
           save_path="best_model.pth", log_dir="./logs/", norm_stats=None,
-          hf_repo=None, model_type="mpnn", attn_bias=None):
+          hf_repo=None, model_type="mpnn", attn_bias=None,
+          early_stop_patience=None):
     best_val_loss = float("inf")
     best_model_state_dict = None
+    epochs_since_improve = 0
 
     writer = SummaryWriter(log_dir + str(time.time()))
 
@@ -84,6 +86,13 @@ def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             best_model_state_dict = model.state_dict().copy()
+            epochs_since_improve = 0
+        else:
+            epochs_since_improve += 1
+            if early_stop_patience is not None and epochs_since_improve >= early_stop_patience:
+                print(f"Early stopping at epoch {epoch + 1} "
+                      f"(no val-loss improvement for {early_stop_patience} epochs).")
+                break
 
     writer.close()
 

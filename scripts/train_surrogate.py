@@ -40,6 +40,9 @@ def main():
     parser.add_argument("--data_dir", type=str, default="hf://ehsan94/fea-gnn-surrogate",
                         help="Root data directory or hf://owner/repo (default: hf://ehsan94/fea-gnn-surrogate)")
     parser.add_argument("--epochs", type=int, default=100, help="Number of training epochs")
+    parser.add_argument("--early_stop_patience", type=int, default=None,
+                        help="Stop training if val loss does not improve for this "
+                             "many consecutive epochs. Default: disabled.")
     parser.add_argument("--batch_size", type=int, default=32, help="Batch size")
     parser.add_argument("--hidden_dim", type=int, default=18, help="Hidden dimension")
     parser.add_argument("--mp_steps", type=int, default=3,
@@ -119,6 +122,7 @@ def main():
         hf_repo=args.hf_repo,
         model_type=args.model,
         attn_bias=args.attn_bias if args.model == "graphormer" else None,
+        early_stop_patience=args.early_stop_patience,
     )
 
     # Evaluate on pooled test split if requested
