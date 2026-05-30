@@ -62,7 +62,7 @@ def validate(model, dataloader, criterion):
 
 def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
           save_path="best_model.pth", log_dir="./logs/", norm_stats=None,
-          hf_repo=None, model_type="mpnn"):
+          hf_repo=None, model_type="mpnn", attn_bias=None):
     best_val_loss = float("inf")
     best_model_state_dict = None
 
@@ -92,6 +92,8 @@ def train(model, train_loader, val_loader, criterion, optimizer, num_epochs,
             "model_state_dict": best_model_state_dict,
             "model_type": model_type,
         }
+        if attn_bias is not None:
+            checkpoint["attn_bias"] = attn_bias
         if norm_stats is not None:
             checkpoint["norm_stats"] = norm_stats
         torch.save(checkpoint, save_path)

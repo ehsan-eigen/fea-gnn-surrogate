@@ -5,7 +5,7 @@ import torch
 from torch_geometric.loader import DataLoader
 
 from fea_gnn_surrogate.surrogate.model import SharedMPNN, GPSModel, Graphormer
-from fea_gnn_surrogate.surrogate.inference import _build_model
+from fea_gnn_surrogate.surrogate.inference import _build_model, ATTN_BIAS_CHOICES
 from fea_gnn_surrogate.surrogate.dataset import (
     load_dataset,
     create_dataloaders,
@@ -55,6 +55,13 @@ def main():
     parser.add_argument("--max_spd", type=int, default=20,
                         help="Max shortest-path distance for Graphormer spatial bias "
                              "(default: 20). Distances beyond this are bucketed as 'unreachable'.")
+    parser.add_argument("--attn_bias", type=str, default="spd",
+                        choices=list(ATTN_BIAS_CHOICES),
+                        help="Graphormer attention bias: spd (legacy shortest-path), "
+                             "resistance (effective-resistance distance, unweighted "
+                             "Laplacian), or resistance_weighted (Laplacian weighted "
+                             "by cross-section area as a stiffness proxy). "
+                             "Default: spd.")
     parser.add_argument("--save_path", type=str, default=None,
                         help="Model save path (default: best_model_<model>_<edge_strategy>.pth)")
     parser.add_argument("--log_dir", type=str, default="./logs/", help="Tensorboard log directory")
@@ -65,7 +72,10 @@ def main():
     args = parser.parse_args()
 
     if args.save_path is None:
-        args.save_path = f"best_model_{args.model}_{args.edge_strategy}.pth"
+        suffix = ""
+        if args.model == "graphormer" and args.attn_bias != "spd":
+            suffix = f"_{args.attn_bias}"
+        args.save_path = f"best_model_{args.model}{suffix}_{args.edge_strategy}.pth"
 
     dataset_path = _dataset_path(os.path.join(args.data_dir, args.mode), args.edge_strategy)
     data_list = load_dataset(dataset_path)
@@ -93,8 +103,9 @@ def main():
     model = _build_model(args.model, num_features, args.hidden_dim, 1,
                          args.mp_steps, heads=args.heads,
                          dropout=args.dropout, attn_dropout=args.attn_dropout,
-                         max_spd=args.max_spd)
-    print(f"Model: {args.model} — {sum(p.numel() for p in model.parameters())} parameters")
+                         max_spd=args.max_spd, attn_bias=args.attn_bias)
+    bias_tag = f" / attn_bias={args.attn_bias}" if args.model == "graphormer" else ""
+    print(f"Model: {args.model}{bias_tag} — {sum(p.numel() for p in model.parameters())} parameters")
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
     criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
@@ -107,6 +118,7 @@ def main():
         norm_stats=norm_stats,
         hf_repo=args.hf_repo,
         model_type=args.model,
+        attn_bias=args.attn_bias if args.model == "graphormer" else None,
     )
 
     # Evaluate on pooled test split if requested
@@ -117,7 +129,7 @@ def main():
             hidden_dim=args.hidden_dim, num_mp_steps=args.mp_steps,
             model_type=args.model, heads=args.heads,
             dropout=args.dropout, attn_dropout=args.attn_dropout,
-            max_spd=args.max_spd,
+            max_spd=args.max_spd, attn_bias=args.attn_bias,
         )
         eval_criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 

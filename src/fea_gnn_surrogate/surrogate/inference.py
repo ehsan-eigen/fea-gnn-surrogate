@@ -4,9 +4,29 @@ import numpy as np
 import pandas as pd
 import pickle
 
-from fea_gnn_surrogate.surrogate.model import SharedMPNN, GPSModel, Graphormer
+from fea_gnn_surrogate.surrogate.model import (
+    SharedMPNN, GPSModel, Graphormer,
+    ShortestPathBias, EffectiveResistanceBias,
+)
 from fea_gnn_surrogate.surrogate.dataset import normalize_data
 from fea_gnn_surrogate.graph.graph_utils import FEATURE_NAMES
+
+
+ATTN_BIAS_CHOICES = ("spd", "resistance", "resistance_weighted")
+
+
+def _make_attn_bias(kind, heads, max_spd):
+    if kind == "spd":
+        return ShortestPathBias(heads, max_spd=max_spd), None
+    if kind in ("resistance", "resistance_weighted"):
+        bias = EffectiveResistanceBias(heads)
+        # A_col and A_beam are mutually exclusive (sin θ vs cos θ); their abs-sum
+        # is the per-element cross-section area, a stand-in for axial stiffness.
+        weight_dims = None
+        if kind == "resistance_weighted":
+            weight_dims = [FEATURE_NAMES.index("A_col"), FEATURE_NAMES.index("A_beam")]
+        return bias, weight_dims
+    raise ValueError(f"Unknown attn_bias kind: {kind!r}; choose from {ATTN_BIAS_CHOICES}")
 
 
 def _resolve_model_path(model_path):
@@ -38,37 +58,43 @@ def _resolve_model_path(model_path):
 
 
 def _build_model(model_type, num_features, hidden_dim, output_dim, num_layers,
-                 heads=3, dropout=0.2, attn_dropout=0.2, max_spd=20):
+                 heads=3, dropout=0.2, attn_dropout=0.2, max_spd=20,
+                 attn_bias="spd"):
     """Instantiate a model by type name."""
     if model_type == "gps":
         return GPSModel(num_features, hidden_dim, output_dim, num_layers,
                         heads=heads, dropout=dropout, attn_dropout=attn_dropout)
     if model_type == "graphormer":
+        bias_module, weight_dims = _make_attn_bias(attn_bias, heads, max_spd)
         return Graphormer(num_features, hidden_dim, output_dim, num_layers,
                           heads=heads, dropout=dropout, attn_dropout=attn_dropout,
-                          max_spd=max_spd)
+                          max_spd=max_spd, attn_bias=bias_module,
+                          weight_feature_dims=weight_dims)
     return SharedMPNN(num_features, hidden_dim, output_dim, num_layers)
 
 
 def load_model(model_path, num_features, hidden_dim=18, output_dim=1,
                num_mp_steps=3, model_type="mpnn", heads=3,
-               dropout=0.2, attn_dropout=0.2, max_spd=20):
+               dropout=0.2, attn_dropout=0.2, max_spd=20, attn_bias="spd"):
     """Load a trained model and normalization stats from a checkpoint.
 
     model_path can be a local path or hf://owner/repo-name/filename.pth.
     """
     checkpoint = torch.load(_resolve_model_path(model_path), weights_only=False)
 
-    # Detect model type from checkpoint if saved there
-    saved_type = None
+    # Detect model type / attention bias from checkpoint if saved there
     if "model_state_dict" in checkpoint:
         saved_type = checkpoint.get("model_type")
-    if saved_type is not None:
-        model_type = saved_type
+        if saved_type is not None:
+            model_type = saved_type
+        saved_bias = checkpoint.get("attn_bias")
+        if saved_bias is not None:
+            attn_bias = saved_bias
 
     model = _build_model(model_type, num_features, hidden_dim, output_dim,
                          num_mp_steps, heads=heads, dropout=dropout,
-                         attn_dropout=attn_dropout, max_spd=max_spd)
+                         attn_dropout=attn_dropout, max_spd=max_spd,
+                         attn_bias=attn_bias)
 
     if "model_state_dict" in checkpoint:
         model.load_state_dict(checkpoint["model_state_dict"])

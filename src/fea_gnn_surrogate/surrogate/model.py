@@ -1,3 +1,5 @@
+import math
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -110,9 +112,109 @@ class ShortestPathBias(nn.Module):
         # +2: indices 0..max_spd are real distances; max_spd+1 is unreachable.
         self.embed = nn.Embedding(max_spd + 2, heads)
 
-    def forward(self, adj, mask):
+    def forward(self, adj, mask, node_w=None):
         spd = _compute_spd_dense(adj, self.max_spd)  # (B, N, N)
         bias = self.embed(spd)  # (B, N, N, H)
+        return bias.permute(0, 3, 1, 2).contiguous()  # (B, H, N, N)
+
+
+class EffectiveResistanceBias(nn.Module):
+    """Physics-aware Graphormer spatial encoding using effective resistance distance.
+
+    For each pair of (line-graph) nodes (i, j), forms the combinatorial
+    Laplacian L = D - W of the (optionally node-weighted) line graph, takes
+    its Moore-Penrose pseudoinverse via eigendecomposition with explicit
+    null-space deflation, and reads off
+
+        R(i, j) = L^+_{ii} + L^+_{jj} - 2 L^+_{ij}.
+
+    R is log-bucketed across `num_bins` and looked up in a learnable per-head
+    embedding, mirroring the SPD bias layout (B, H, N, N).
+
+    Edge weights are derived from per-node "stiffness" weights (e.g. EA/L on
+    the joint graph mapped onto its line graph) via a harmonic mean of the two
+    incident endpoint weights — the standard series-stiffness combination.
+    If `node_w` is None, the bias falls back to an unweighted Laplacian, which
+    is still a strict generalisation of SPD (integrated over all paths) but
+    carries no stiffness information.
+
+    For full physical faithfulness to static FEA the weighted Laplacian should
+    live on the *joint* graph with constrained DOFs removed, and resistance
+    distance between members lifted via R(u_a,u_b)+R(v_a,v_b)-R(u_a,v_b)-R(v_a,u_b).
+    That variant needs joint-incidence carried on the data object and is left
+    as a follow-up; this module is the in-line-graph drop-in.
+    """
+
+    def __init__(self, heads, num_bins=20, r_min=1e-3, r_max=1e3, eig_eps=1e-6):
+        super().__init__()
+        self.heads = heads
+        self.num_bins = num_bins
+        self.r_min = float(r_min)
+        self.r_max = float(r_max)
+        self.eig_eps = float(eig_eps)
+        # Last index reserved for "unreachable" (padding, different component).
+        self.embed = nn.Embedding(num_bins + 1, heads)
+        self.unreachable_idx = num_bins
+
+    def forward(self, adj, mask, node_w=None):
+        # adj: (B, N, N) float; mask: (B, N) bool; node_w: (B, N) positive or None
+        B, N, _ = adj.shape
+
+        adj_sym = 0.5 * (adj + adj.transpose(-1, -2))
+        edge_present = (adj_sym > 0).float()
+
+        if node_w is not None:
+            w = node_w.clamp(min=1e-12)
+            inv = 1.0 / w
+            # Harmonic mean of incident-node weights ≈ series stiffness.
+            harmonic = 2.0 / (inv.unsqueeze(2) + inv.unsqueeze(1))
+            W = harmonic * edge_present
+        else:
+            W = edge_present
+
+        if mask is not None:
+            m = mask.float()
+            W = W * m.unsqueeze(2) * m.unsqueeze(1)
+
+        # Combinatorial Laplacian.
+        deg = W.sum(dim=-1)
+        L = torch.diag_embed(deg) - W
+
+        # Symmetrize for numerical stability before eigh.
+        L = 0.5 * (L + L.transpose(-1, -2))
+
+        eigvals, eigvecs = torch.linalg.eigh(L)  # (B, N), (B, N, N)
+        # Per-batch tolerance scaled by the largest eigenvalue: kills zero modes
+        # for every disconnected component (including padded-out singletons).
+        tol = self.eig_eps * eigvals[..., -1:].clamp(min=1.0)
+        nonzero = eigvals > tol
+        inv_eig = torch.where(
+            nonzero,
+            1.0 / eigvals.clamp(min=tol),
+            torch.zeros_like(eigvals),
+        )
+
+        # L^+ = V diag(inv_eig) V^T
+        Lpinv = (eigvecs * inv_eig.unsqueeze(-2)) @ eigvecs.transpose(-1, -2)
+        diag = torch.diagonal(Lpinv, dim1=-2, dim2=-1)  # (B, N)
+        R = diag.unsqueeze(-1) + diag.unsqueeze(-2) - 2.0 * Lpinv
+        R = R.clamp(min=0.0)
+
+        # Bucket on a log scale.
+        log_min = math.log(self.r_min)
+        log_max = math.log(self.r_max)
+        log_r = torch.log(R.clamp(min=self.r_min, max=self.r_max))
+        idx = ((log_r - log_min) / (log_max - log_min) * (self.num_bins - 1)).round().long()
+        idx = idx.clamp(0, self.num_bins - 1)
+
+        # Unreachable: pairs hitting r_max ceiling or involving padding.
+        unreachable = R >= self.r_max
+        if mask is not None:
+            pad_pair = ~(mask.unsqueeze(2) & mask.unsqueeze(1))
+            unreachable = unreachable | pad_pair
+        idx = torch.where(unreachable, torch.full_like(idx, self.unreachable_idx), idx)
+
+        bias = self.embed(idx)  # (B, N, N, H)
         return bias.permute(0, 3, 1, 2).contiguous()  # (B, H, N, N)
 
 
@@ -181,7 +283,8 @@ class Graphormer(nn.Module):
 
     def __init__(self, num_features, hidden_dim, output_dim, num_layers,
                  heads=3, dropout=0.2, attn_dropout=0.2, ffn_ratio=4,
-                 max_degree=128, max_spd=20, attn_bias=None):
+                 max_degree=128, max_spd=20, attn_bias=None,
+                 weight_feature_dims=None):
         super().__init__()
         assert hidden_dim % heads == 0, (
             f"hidden_dim ({hidden_dim}) must be divisible by heads ({heads})"
@@ -191,6 +294,9 @@ class Graphormer(nn.Module):
         self.in_degree_emb = nn.Embedding(max_degree + 1, hidden_dim)
         self.out_degree_emb = nn.Embedding(max_degree + 1, hidden_dim)
         self.attn_bias = attn_bias if attn_bias is not None else ShortestPathBias(heads, max_spd=max_spd)
+        # Columns of `x` to sum (abs) into a per-node stiffness proxy passed to
+        # the attention bias (only consumed by physics-aware bias modules).
+        self.weight_feature_dims = weight_feature_dims
 
         self.layers = nn.ModuleList([
             GraphormerLayer(hidden_dim, heads, dropout, attn_dropout, ffn_ratio=ffn_ratio)
@@ -211,7 +317,13 @@ class Graphormer(nn.Module):
         h_dense, mask = to_dense_batch(h, batch)  # (B, N, D), (B, N)
         adj = to_dense_adj(edge_index, batch, max_num_nodes=h_dense.size(1))  # (B, N, N)
 
-        bias = self.attn_bias(adj, mask)  # (B, H, N, N)
+        if self.weight_feature_dims is not None:
+            node_w_flat = x[:, self.weight_feature_dims].abs().sum(dim=-1) + 1e-6
+            node_w, _ = to_dense_batch(node_w_flat, batch)  # (B, N)
+        else:
+            node_w = None
+
+        bias = self.attn_bias(adj, mask, node_w)  # (B, H, N, N)
 
         for layer in self.layers:
             h_dense = layer(h_dense, bias, mask)
