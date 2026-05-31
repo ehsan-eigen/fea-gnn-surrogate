@@ -183,7 +183,20 @@ class EffectiveResistanceBias(nn.Module):
         # Symmetrize for numerical stability before eigh.
         L = 0.5 * (L + L.transpose(-1, -2))
 
-        eigvals, eigvecs = torch.linalg.eigh(L)  # (B, N), (B, N, N)
+        # Cast to double + add tiny relative diagonal jitter. Widely-varying
+        # edge weights (e.g. EA/L proxies with 20-40x range) produce
+        # near-singular Laplacians where float32 eigh fails to converge.
+        L_d = L.double()
+        eye_n = torch.eye(N, dtype=L_d.dtype, device=L_d.device).unsqueeze(0)
+        trace = torch.diagonal(L_d, dim1=-2, dim2=-1).sum(dim=-1, keepdim=True)  # (B, 1)
+        jitter = 1e-10 * trace.clamp(min=1.0).unsqueeze(-1)  # (B, 1, 1)
+        try:
+            eigvals, eigvecs = torch.linalg.eigh(L_d + jitter * eye_n)
+        except torch._C._LinAlgError:
+            jitter = jitter * 1e6  # 1e-4 relative jitter — last-resort
+            eigvals, eigvecs = torch.linalg.eigh(L_d + jitter * eye_n)
+        eigvals = eigvals.to(L.dtype)
+        eigvecs = eigvecs.to(L.dtype)
         # Per-batch tolerance scaled by the largest eigenvalue: kills zero modes
         # for every disconnected component (including padded-out singletons).
         tol = self.eig_eps * eigvals[..., -1:].clamp(min=1.0)

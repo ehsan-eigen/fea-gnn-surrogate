@@ -1,5 +1,6 @@
 *.pyc
 .vscode/
+.claude/
 __pycache__/
 *.egg-info/
 top_structs/
