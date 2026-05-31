@@ -75,6 +75,21 @@ def _generate_single_sample(configs, fea, save_graphs, output_dir, mode,
     graph_handler.set_load_decomposition(Gs)
     L = nx.line_graph(Gs)
     L.add_nodes_from((node, Gs.edges[node]) for node in L)
+    # Preserve joint-graph plumbing on the line graph for the physics-aware
+    # attention bias. Each line-graph node (= a member) carries (u, v) integer
+    # joint endpoints, and the line graph itself remembers how many joints
+    # exist and which are supports. Gs is int-keyed but sparse (gaps left by
+    # `remove_disconnected_nodes` / `unify_edges`), so we densify joint IDs
+    # to [0, num_joints) here — must match the densification applied to Gs
+    # at the end of this function.
+    gs_to_dense = {node: i for i, node in enumerate(Gs.nodes())}
+    for node in L.nodes():
+        u, v = node
+        L.nodes[node]["endpoints"] = (gs_to_dense[u], gs_to_dense[v])
+    L.graph["num_joints"] = Gs.number_of_nodes()
+    L.graph["joint_supports"] = sorted(
+        gs_to_dense[j] for j in Gs.nodes() if Gs.nodes[j].get("free") == [0]
+    )
     L = GraphHandler.node_tuple_2_index(L)
 
     G.graph["name"] = str(episode_id)

@@ -10,6 +10,23 @@ from torch_geometric.data import Data
 import math
 
 
+class JointLineData(Data):
+    """PyG Data carrying joint-graph plumbing for physics-aware biases.
+
+    `member_endpoints` is an (N, 2) long tensor of integer joint indices in
+    the *original* joint graph, one row per line-graph node (= member).
+    Virtual nodes (and any non-physical node) use sentinel (-1, -1); these
+    are skipped by the bias module. Under PyG batching, per-graph endpoints
+    must be shifted by the running total of `num_joints` to remain valid
+    after concatenation — that's what the `__inc__` override does.
+    """
+
+    def __inc__(self, key, value, *args, **kwargs):
+        if key == "member_endpoints":
+            return int(self.num_joints) if self.num_joints is not None else 0
+        return super().__inc__(key, value, *args, **kwargs)
+
+
 LAPLACIAN_PE_DIM = 8
 
 # Feature names for the PyG node feature matrix (line graph: nodes = structural elements).
@@ -661,6 +678,8 @@ class GraphHandler:
 
         pyg_data_list = []
         for G in nx_graphs:
+            num_joints = G.graph.get("num_joints")
+            joint_supports_list = G.graph.get("joint_supports", [])
             G = G.to_directed()
             edge_index = torch.tensor(list(G.edges())).T
             G = nx.node_link_data(G)
@@ -697,6 +716,27 @@ class GraphHandler:
             pe = _laplacian_pe(edge_index, num_nodes=x.shape[0], k=8)
             x = torch.cat([x, pe], dim=1)  # [N, 17] → [N, 25]
 
+            # Joint-graph plumbing for physics-aware attention bias. Endpoints
+            # are line-graph-node → (joint_u, joint_v) integer indices; the
+            # virtual node added below gets sentinel (-1, -1) and is skipped
+            # by the bias module. Stiffness proxy is EA/L with E folded into a
+            # global scale (k ∝ D·W/dist) — raw, unnormalized.
+            num_real = x.shape[0]
+            member_endpoints = torch.tensor(
+                [list(node.get("endpoints", (-1, -1))) for node in nodes],
+                dtype=torch.long,
+            )
+            stiffness_EA_over_L = torch.tensor(
+                [node["D"] * node["W"] / max(node["dist"], 1e-6) for node in nodes],
+                dtype=torch.float,
+            )
+            if num_joints is None:
+                num_joints = 0
+            joint_supports = torch.zeros(num_joints, dtype=torch.bool)
+            for j in joint_supports_list:
+                if 0 <= j < num_joints:
+                    joint_supports[j] = True
+
             if use_virtual_node:
                 # Add virtual node (all-zero features; real=0 at index 4 marks it as non-physical)
                 num_real_nodes = x.shape[0]
@@ -707,6 +747,12 @@ class GraphHandler:
                 vn_to_all = torch.stack([torch.full((num_real_nodes,), vn_idx, dtype=torch.long), real_indices])
                 all_to_vn = torch.stack([real_indices, torch.full((num_real_nodes,), vn_idx, dtype=torch.long)])
                 edge_index = torch.cat([edge_index, vn_to_all, all_to_vn], dim=1)
+                member_endpoints = torch.cat(
+                    [member_endpoints, torch.tensor([[-1, -1]], dtype=torch.long)], dim=0
+                )
+                stiffness_EA_over_L = torch.cat(
+                    [stiffness_EA_over_L, torch.zeros(1)], dim=0
+                )
 
             if has_label:
                 y = torch.tensor([node["valid"] for node in nodes])
@@ -717,7 +763,7 @@ class GraphHandler:
                     y = torch.cat([y, torch.zeros(1, dtype=y.dtype)])
                     drift = torch.cat([drift, torch.zeros(1, dtype=drift.dtype)])
                     normal_def = torch.cat([normal_def, torch.zeros(1, dtype=normal_def.dtype)])
-                data = Data(
+                data = JointLineData(
                     x=x,
                     edge_index=edge_index,
                     y=y,
@@ -725,9 +771,20 @@ class GraphHandler:
                     drift=drift,
                     normal_def=normal_def,
                     name=G["graph"]["name"],
+                    member_endpoints=member_endpoints,
+                    num_joints=num_joints,
+                    joint_supports=joint_supports,
+                    stiffness_EA_over_L=stiffness_EA_over_L,
                 )
             else:
-                data = Data(x=x, edge_index=edge_index, weight=weight, name=G["graph"]["name"])
+                data = JointLineData(
+                    x=x, edge_index=edge_index, weight=weight,
+                    name=G["graph"]["name"],
+                    member_endpoints=member_endpoints,
+                    num_joints=num_joints,
+                    joint_supports=joint_supports,
+                    stiffness_EA_over_L=stiffness_EA_over_L,
+                )
 
             pyg_data_list.append(data)
 
