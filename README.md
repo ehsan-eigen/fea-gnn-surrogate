@@ -121,12 +121,6 @@ pip install torch_geometric
 pip install -e .
 ```
 
-`huggingface_hub` is included as a dependency and installed automatically. To upload datasets or models to Hugging Face, set the `HF_TOKEN` environment variable:
-
-```bash
-export HF_TOKEN=your_token_here
-```
-
 ---
 
 ## Quick Start
@@ -134,19 +128,18 @@ export HF_TOKEN=your_token_here
 ### 1. Generate data
 
 ```bash
-# Training data (2000 structures from 5 configs) — saved locally
-python scripts/generate_dataset.py --datasets dataset_1 dataset_3 dataset_4 dataset_5 dataset_6 \
+# Training data (2000 structures from 4 configs) — saved to data/train/
+python scripts/generate_dataset.py --datasets dataset_1 dataset_2 dataset_3 dataset_4 \
     --num_samples 2000 --mode train --concurrency 8
 
-# Test data (from a held-out config)
-python scripts/generate_dataset.py --datasets dataset_2 --num_samples 200 --mode test --concurrency 4
+# Test data (held-out configs)
+python scripts/generate_dataset.py --datasets dataset_5 dataset_6 \
+    --num_samples 200 --mode test --concurrency 4
 ```
 
 Each run:
 - Generates structures by sampling from the specified dataset configs, runs FEA, and saves raw NetworkX line graphs to `data/{mode}/base/` (the **base dataset** — topology + attributes, no feature extraction)
 - Extracts PyG features and saves two edge-strategy variants (`with_vn`, `no_vn`) from the same structures
-
-Pass `--hf_repo ehsan94/fea-gnn-surrogate` to upload the generated `.pkl` files to Hugging Face (requires `HF_TOKEN`).
 
 **Changing features without re-running FEA:** If you modify feature extraction (e.g. add or remove a feature), you can re-extract from the saved base data without regenerating structures or re-running FEA:
 
@@ -159,30 +152,20 @@ python scripts/extract_features.py --mode test
 
 ```bash
 # SharedMPNN (default)
-python scripts/train_surrogate.py --model mpnn --edge_strategy with_vn --epochs 50 --run_eval
+python scripts/train_surrogate.py --model mpnn --edge_strategy with_vn --epochs 50 --run_eval --data_dir data
 
 # GPS Graph Transformer — no artificial edges needed
 python scripts/train_surrogate.py --model gps --edge_strategy no_vn --epochs 20 \
-    --hidden_dim 18 --mp_steps 3 --dropout 0.5 --run_eval
+    --hidden_dim 18 --mp_steps 3 --dropout 0.5 --run_eval --data_dir data
 ```
 
-Training data is loaded from Hugging Face by default (`hf://ehsan94/fea-gnn-surrogate`). To use a local directory instead, pass `--data_dir data`.
-
-The best model is saved to `best_model_<model>_<edge_strategy>.pth`. Pass `--hf_repo ehsan94/fea-gnn-surrogate` to upload to Hugging Face (requires `HF_TOKEN`). The `--run_eval` flag evaluates on the pooled test set after training.
+The best model is saved to `best_model_<model>_<edge_strategy>.pth`. The `--run_eval` flag evaluates on the pooled test set after training.
 
 ### 3. Evaluate on test sets
 
 ```bash
 python scripts/evaluate_model.py --model_path best_model_mpnn_with_vn.pth \
-    --test_sets test
-```
-
-Test data is loaded from Hugging Face by default. Both `--model_path` and `--data_dir` accept `hf://owner/repo` paths:
-
-```bash
-python scripts/evaluate_model.py \
-    --model_path hf://ehsan94/fea-gnn-surrogate/best_model_mpnn_with_vn.pth \
-    --test_sets test
+    --data_dir data --test_sets test
 ```
 
 Output:
@@ -242,7 +225,7 @@ Each generation run produces two graph representations of the **same** structure
 
 ### Experimental results (25 features, Laplacian PE k=8, variable load, 2000 training samples)
 
-Training uses variable loads: vertical and horizontal forces are sampled from distributions (see `load` section in `config.json`) rather than fixed values. The training set is drawn from 5 dataset configs (`dataset_1`, `dataset_3`–`dataset_6`) covering a range of building widths and heights. The test set uses a held-out config (`dataset_2`) with a different column layout.
+Training uses variable loads: vertical and horizontal forces are sampled from distributions (see `load` section in `config.json`) rather than fixed values. The training set is drawn from 4 dataset configs (`dataset_1`–`dataset_4`) covering a range of building widths and heights. The test set uses held-out configs (`dataset_5`, `dataset_6`) with different column layouts.
 
 #### SharedMPNN
 
